@@ -13,7 +13,7 @@ from collections import defaultdict
 warnings.filterwarnings('ignore', category=UserWarning)
 
 st.set_page_config(page_title=" SYD20 Cutsheet Formatter", page_icon="📋", layout="wide")
-st.title("SYD 20 Cutsheet Formatter")
+st.title("SYD20 Cutsheet Formatter")
 st.caption("works mint")
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
