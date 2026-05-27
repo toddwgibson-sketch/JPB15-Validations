@@ -933,4 +933,4 @@ if st.button("🚀 Process Report (Full Fidelity)", type="primary",
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-st.caption("Full fidelity conversion — all original logic from lv_portal_formatter.qfabt0 preserved.")
+st.caption(".")
