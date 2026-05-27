@@ -14,7 +14,7 @@ col_logo, col_title = st.columns([0.8, 6])
 with col_logo:
     logo_path = Path(__file__).parent / "assets" / "LOGO.jpg"
     if logo_path.exists():
-        st.image(str(logo_path), width=155)
+        st.image(str(logo_path), width=255)
     else:
         st.markdown("<div style='font-size:42px; margin-top:-8px;'>🔧</div>", unsafe_allow_html=True)
 
