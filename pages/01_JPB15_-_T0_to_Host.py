@@ -50,7 +50,7 @@ def show_header(title: str, subtitle: str = ""):
         if subtitle:
             st.caption(subtitle)
 
-st.set_page_config(page_title="LV Portal Validation Formatter", page_icon="🖥️", layout="wide")
+st.set_page_config(page_title="T0 to Host", page_icon="🖥️", layout="wide")
 
 
 # ── Colours (same as original) ────────────────────────────────────────────────
