@@ -870,7 +870,7 @@ report_file = st.file_uploader(
     key="qfab_full_report"
 )
 
-if st.button("🚀 Process Report (Full Fidelity)", type="primary",
+if st.button("🚀 Process Report", type="primary",
              disabled=not (cutsheet_files and report_file)):
     temp_dir = tempfile.mkdtemp()
     log_capture = io.StringIO()
