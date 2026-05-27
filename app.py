@@ -20,10 +20,10 @@ with col_logo:
 
 with col_title:
     st.markdown("""
-    <h1 style='margin:0; padding:0; color:#1E3A5F; font-size:2.1rem; font-weight:700;'>
+    <h1 style='margin:0; padding:0; color:#FFFFFF; font-size:2.1rem; font-weight:700;'>
         LV Portal Validation Suite
     </h1>
-    <p style='margin:4px 0 0 0; color:#5A6A7A; font-size:1.05rem;'>
+    <p style='margin:4px 0 0 0; color:#FFFFFF; font-size:1.05rem;'>
         Unified tools for processing LV Portal and Slack validation reports
     </p>
     """, unsafe_allow_html=True)
