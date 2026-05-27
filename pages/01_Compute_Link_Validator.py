@@ -1271,7 +1271,7 @@ def main():
     st.markdown("""
     **Streamlit web version** — converts LV Portal validation exports into a clean, color-coded multi-tab Excel report.
     
-    - Upload **GPU/Compute cutsheet(s)** (required)
+    - Upload **Cutsheet(s)** (required)
     - Upload **LV Portal Validation Export** (required)
     - (Optional) Upload **T0/T1 Installation cutsheet(s)** for full L&R labels + patch panel data in Mispatches/Downlinks/Optics
     - (Optional) Upload **Previous formatted report** for recurring / history flags
