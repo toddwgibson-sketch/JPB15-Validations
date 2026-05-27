@@ -612,7 +612,7 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                 results.append((f"{rack_name}.xlsx", bytes_data))
                 progress.progress((idx + 1) / len(rack_files))
 
-            st.success(f"Processed {len(results)} file(s) successfully!")
+            st.success(f"Processed {len(results)} file(s) successfully")
 
             # Create ZIP for download
             zip_buffer = io.BytesIO()
@@ -633,4 +633,4 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
             st.error(f"Error during processing: {str(e)}")
             st.exception(e)
 
-st.caption("Full fidelity conversion from Tkinter • All original logic and formatting preserved")
+st.caption("")
