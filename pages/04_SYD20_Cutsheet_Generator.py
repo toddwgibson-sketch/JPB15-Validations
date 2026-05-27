@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 st.set_page_config(page_title="Cutsheet Formatter", page_icon="📋", layout="wide")
 st.title("Cutsheet Formatter")
-st.caption("Converts an 'All Connects' export into formatted cutsheet workbooks (single or split by room)")
+st.caption("works mint")
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
 COLOR_RJ45        = '#FFCCCC'
@@ -489,4 +489,4 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
             st.error(f"Error: {str(e)}")
             st.exception(e)
 
-st.caption("Converted from Tkinter to Streamlit • All original formatting logic preserved")
+st.caption("can take some time...")
