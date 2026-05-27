@@ -2,7 +2,7 @@ import streamlit as st
 from pathlib import Path
 
 st.set_page_config(
-    page_title="TEST - ignore the terrible naming, it finds it in the code",
+    page_title="staging env",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -21,10 +21,10 @@ with col_logo:
 with col_title:
     st.markdown("""
     <h1 style='margin:0; padding:0; color:#FFFFFF; font-size:2.1rem; font-weight:700;'>
-        LV Portal Validation Suite
+        TEST - ignore the look and feel. function first
     </h1>
     <p style='margin:4px 0 0 0; color:#FFFFFF; font-size:1.05rem;'>
-        Unified tools for processing LV Portal and Slack validation reports
+        can make it pretty later
     </p>
     """, unsafe_allow_html=True)
 
