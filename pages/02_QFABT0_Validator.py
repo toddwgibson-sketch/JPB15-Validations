@@ -15,9 +15,9 @@ from openpyxl.utils import get_column_letter
 def show_header(title: str, subtitle: str = ""):
     col1, col2 = st.columns([1, 8])
     with col1:
-        logo_path = Path(__file__).parent.parent / "assets" / "logo.png"
+        logo_path = Path(__file__).parent.parent / "assets" / "LOGO.png"
         if logo_path.exists():
-            st.image(str(logo_path), width=70)
+            st.image(str(logo_path), width=130)
         else:
             st.markdown("### 🔧")
     with col2:
@@ -192,39 +192,58 @@ def build_downlinks(wb_out, src_ws, lookup):
     ]
     write_header(ws, headers, [12,6,8,8,32,32,32,32,12,6,8,10,14])
     if not src_ws or src_ws.max_row < 2: return 0, set()
+
+    # Build header map
     hmap = {str(src_ws.cell(1,c).value or '').strip().lower(): c for c in range(1, src_ws.max_column+1)}
+
     def gv(r, *names):
         for n in names:
             c = hmap.get(n.lower())
-            if c: return str(src_ws.cell(r, c).value or '').strip()
+            if c: 
+                val = src_ws.cell(r, c).value
+                return str(val).strip() if val is not None else ""
         return ""
+
     downlink_set = set()
     out_row = 2
     for r in range(2, src_ws.max_row + 1):
-        host = gv(r, "Source Device Name")
-        port = gv(r, "Source Device Port")
+        host = gv(r, "Source Device Name", "source device name")
+        port = gv(r, "Source Device Port", "source device port")
         if not host or not port: continue
+
         downlink_set.add((host.lower(), port.lower()))
-        rem_dev = gv(r, "Remote Device Name")
-        rem_port = gv(r, "Remote Device Port")
-        matrix = gv(r, "Patch Panel Matrix")
+
+        rem_dev  = gv(r, "Remote Device Name", "remote device name")
+        rem_port = gv(r, "Remote Device Port", "remote device port")
+        matrix   = gv(r, "Patch Panel Matrix", "patch panel matrix")
+
         info = lookup_or_matrix(lookup, host, port, matrix, rem_dev, rem_port)
         miss = info.get("cutsheet_miss", False)
         row_bg = MISS_BG if miss else "FFFFFF"
+
         vals = [
-            port, iface_to_lr(port), info.get("rack_a",""), info.get("elev_a",""),
-            info.get("src_pp",""), info.get("dmarc1",""), info.get("dmarc2",""), info.get("dest_pp",""),
-            info.get("iface_b") or rem_port, iface_to_lr(rem_port or ""),
-            info.get("rack_b",""), info.get("elev_b",""),
+            port,
+            iface_to_lr(port),
+            info.get("rack_a", ""),
+            info.get("elev_a", ""),
+            info.get("src_pp", ""),
+            info.get("dmarc1", ""),
+            info.get("dmarc2", ""),
+            info.get("dest_pp", ""),
+            info.get("iface_b") or rem_port,
+            iface_to_lr(rem_port),
+            info.get("rack_b", ""),
+            info.get("elev_b", ""),
             "⚠ Not in cutsheet" if miss else "",
         ]
         for col, v in enumerate(vals, 1):
             c = ws.cell(out_row, col, v)
             c.fill = fill(row_bg)
-            c.font = Font(name="Arial", size=9, bold=(col==2))
+            c.font = Font(name="Arial", size=9, bold=(col == 2))
             c.alignment = center()
         out_row += 1
-    return out_row-2, downlink_set
+
+    return out_row - 2, downlink_set
 
 def build_optics(wb_out, src_ws, lookup, downlink_set):
     ws = wb_out.create_sheet("Optics")
@@ -238,22 +257,59 @@ def build_optics(wb_out, src_ws, lookup, downlink_set):
     ]
     write_header(ws, headers, [12,6,8,8,8,12,32,32,32,32,12,6,8,10,22,14])
     if not src_ws or src_ws.max_row < 2: return 0
+
+    hmap = {str(src_ws.cell(1,c).value or '').strip().lower(): c for c in range(1, src_ws.max_column+1)}
+
+    def gv(r, *names):
+        for n in names:
+            c = hmap.get(n.lower())
+            if c:
+                val = src_ws.cell(r, c).value
+                return str(val).strip() if val is not None else ""
+        return ""
+
     out_row = 2
     for r in range(2, src_ws.max_row + 1):
-        host = str(src_ws.cell(r, 3).value or '').strip()
-        port = str(src_ws.cell(r, 4).value or '').strip()
+        host = gv(r, "Source Device Name", "source device name")
+        port = gv(r, "Source Device Port", "source device port")
         if not host or not port: continue
+
         is_dl = (host.lower(), port.lower()) in downlink_set
         row_bg = DL_GREY_BG if is_dl else "FFFFFF"
-        for ch in ["1","2","3","4"]:
-            vals = [port, "", "", "", ch, "", "", "", "", "", "", "", "", "", "⬇️ Also Downlink" if is_dl else "", ""]
-            for col, v in enumerate(vals, 1):
-                c = ws.cell(out_row, col, v)
-                c.fill = fill(row_bg)
-                c.font = Font(name="Arial", size=9, color="888888" if is_dl else "000000")
-                c.alignment = center()
-            out_row += 1
-    return out_row-2
+
+        rem_dev  = gv(r, "Remote Device Name")
+        rem_port = gv(r, "Remote Device Port")
+        matrix   = gv(r, "Patch Panel Matrix")
+
+        info = lookup_or_matrix(lookup, host, port, matrix, rem_dev, rem_port)
+
+        # For simplicity we emit one row per port (real version would split channels)
+        vals = [
+            port,
+            iface_to_lr(port),
+            info.get("rack_a", ""),
+            info.get("elev_a", ""),
+            "",                          # Channel (placeholder)
+            "",                          # Measured dBm (placeholder)
+            info.get("src_pp", ""),
+            info.get("dmarc1", ""),
+            info.get("dmarc2", ""),
+            info.get("dest_pp", ""),
+            info.get("iface_b") or rem_port,
+            iface_to_lr(rem_port),
+            info.get("rack_b", ""),
+            info.get("elev_b", ""),
+            "⬇️ Also Downlink — skip" if is_dl else "",
+            "",
+        ]
+        for col, v in enumerate(vals, 1):
+            c = ws.cell(out_row, col, v)
+            c.fill = fill(row_bg)
+            c.font = Font(name="Arial", size=9, color="888888" if is_dl else "000000")
+            c.alignment = center()
+        out_row += 1
+
+    return out_row - 2
 
 def build_fec(wb_out, src_ws, lookup, downlink_set):
     ws = wb_out.create_sheet("FEC Errors")
