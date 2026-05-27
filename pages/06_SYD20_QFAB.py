@@ -13,7 +13,7 @@ from pathlib import Path
 
 st.set_page_config(page_title="SYD20 QFAB", page_icon="📊", layout="wide")
 st.title("SYD20 QFAB")
-st.caption("Combine multiple per-building audit files into one enriched workbook (full fidelity conversion)")
+st.caption("")
 
 # ─────────────────────────────────────────────────────────────────── Styles ──
 YELLOW_FILL = PatternFill("solid", start_color="FFFF00")
