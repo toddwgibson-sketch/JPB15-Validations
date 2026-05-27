@@ -260,7 +260,7 @@ def write_header_row(ws, headers, widths):
     for col, ((label, bg), w) in enumerate(zip(headers, widths), start=1):
         c = ws.cell(1, col)
         c.value = label; c.fill = fill(bg)
-        c.font = Font(bold=True, color=WHITE, name="Arial", size=9)
+        c.font = Font(bold=True, color=WHITE, name="Arial", size=11)
         c.alignment = center()
         ws.column_dimensions[get_column_letter(col)].width = w
     ws.row_dimensions[1].height = 20
