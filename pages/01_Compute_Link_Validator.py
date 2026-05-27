@@ -1265,7 +1265,7 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-    show_header("Compute Link Validator", "GPU / T0 + Ghost host detection")
+    show_header("T0 to Host", "")
 
     st.title("🔧 LV Portal Validation Formatter")
     st.markdown("""
