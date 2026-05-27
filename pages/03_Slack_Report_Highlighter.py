@@ -591,88 +591,199 @@ def read_lldp_rows(ws_src, phys_t0, phys_t1, t1_rev):
 
     return rows
 
-# ── Summary tab (simplified but functional) ──────────────────────────────────
+# ── Summary tab (replicating original formatting from screenshot) ────────────
 def build_summary_tab(wb_out, lldp_rows, miss_rows, down_rows,
                       prev_miss, prev_down, prev_opt,
-                      report_name, prev_report_name):
+                      report_name, prev_report_name,
+                      optics_count=0, fec_count=0):
     ws = wb_out.create_sheet("Summary", 0)
     ws.sheet_properties.tabColor = "1F4E79"
 
-    NAVY  = "1F4E79"; WHITE = "FFFFFF"; RED   = "C00000"
-    GREEN = "1E8449"; AMBER = "B7770D"; TEAL  = "0D7377"
+    NAVY  = "1F4E79"
+    WHITE = "FFFFFF"
+    RED   = "C00000"
+    GREEN = "1E8449"
+    AMBER = "B7770D"
+    TEAL  = "0D7377"
+    LRED  = "FADBD8"
+    LGRN  = "D5F5E3"
+    LYEL  = "FEF9E7"
+    LGRY  = "F2F2F2"
 
-    def fill(h):  return PatternFill("solid", fgColor=h)
+    def fill(h): return PatternFill("solid", fgColor=h)
     def font(color="000000", bold=False, sz=10, italic=False):
         return Font(bold=bold, italic=italic, color=color, name="Arial", size=sz)
-    def center(wrap=False): return Alignment(horizontal="center", vertical="center", wrap_text=wrap)
+    def center(wrap=False):
+        return Alignment(horizontal="center", vertical="center", wrap_text=wrap)
 
     miss_total = len(miss_rows)
     down_total = len(down_rows)
+    opt_total  = optics_count
+    fec_total  = fec_count
+    grand_total = miss_total + down_total + opt_total + fec_total
 
-    ws.merge_cells("B1:G1")
-    c = ws["B1"]; c.value = "VALIDATION REPORT — SUMMARY"
-    c.fill = fill(NAVY); c.font = Font(bold=True, color=WHITE, name="Arial", size=14)
-    c.alignment = center(); ws.row_dimensions[1].height = 32
+    # Title
+    ws.merge_cells("B1:H1")
+    c = ws["B1"]
+    c.value = "VALIDATION REPORT — SUMMARY"
+    c.fill = fill(NAVY)
+    c.font = Font(bold=True, color=WHITE, name="Arial", size=14)
+    c.alignment = center()
+    ws.row_dimensions[1].height = 32
 
-    ws.merge_cells("B2:G2")
-    c = ws["B2"]; c.value = f"Report: {report_name}   |   Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-    c.fill = fill(TEAL); c.font = Font(italic=True, color=WHITE, name="Arial", size=9)
-    c.alignment = center(); ws.row_dimensions[2].height = 16
+    # Report info
+    ws.merge_cells("B2:H2")
+    c = ws["B2"]
+    c.value = f"Report: {report_name}   |   Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    c.fill = fill(TEAL)
+    c.font = Font(italic=True, color=WHITE, name="Arial", size=9)
+    c.alignment = center()
+    ws.row_dimensions[2].height = 18
 
+    # Previous report line
+    ws.merge_cells("B3:H3")
     if prev_report_name:
-        ws.merge_cells("B3:G3")
-        c = ws["B3"]; c.value = f"Compared against: {prev_report_name}"
-        c.fill = fill("2E4057"); c.font = Font(italic=True, color=WHITE, name="Arial", size=9)
-        c.alignment = center()
+        c = ws["B3"]
+        c.value = f"Compared against: {prev_report_name}"
+        c.fill = fill("2E4057")
+        c.font = Font(italic=True, color=WHITE, name="Arial", size=9)
+    else:
+        c = ws["B3"]
+        c.value = "No previous report selected — recurring analysis not available"
+        c.fill = fill("595959")
+        c.font = Font(italic=True, color=WHITE, name="Arial", size=9)
+    c.alignment = center()
+    ws.row_dimensions[3].height = 16
 
-    ws.row_dimensions[4].height = 8
+    ws.row_dimensions[4].height = 6
 
-    grand_total = miss_total + down_total
-    kpi_labels = ["TOTAL ISSUES", "MISMATCHES", "DOWNLINKS"]
-    kpi_values = [grand_total, miss_total, down_total]
-    kpi_bgs    = [NAVY, RED, AMBER]
+    # KPI Banner
+    kpi_labels = ["TOTAL ISSUES", "MISMATCHES", "DOWNLINKS", "OPTICS", "FEC ERRORS"]
+    kpi_values = [grand_total, miss_total, down_total, opt_total, fec_total]
+    kpi_bgs    = [NAVY, RED, AMBER, "833C00", "7030A0"]
 
     for i, (lbl, val, bg) in enumerate(zip(kpi_labels, kpi_values, kpi_bgs)):
         col = i + 2
         ws.row_dimensions[5].height = 16
-        ws.row_dimensions[6].height = 30
-        c = ws.cell(5, col); c.value = lbl
-        c.fill = fill(bg); c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
+        ws.row_dimensions[6].height = 28
+        c = ws.cell(5, col)
+        c.value = lbl
+        c.fill = fill(bg)
+        c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
         c.alignment = center(wrap=True)
-        c = ws.cell(6, col); c.value = val
-        c.fill = fill(bg); c.font = Font(bold=True, color=WHITE, name="Arial", size=20)
+        c = ws.cell(6, col)
+        c.value = val
+        c.fill = fill(bg)
+        c.font = Font(bold=True, color=WHITE, name="Arial", size=18)
         c.alignment = center()
 
-    ws.row_dimensions[7].height = 10
-    ws.merge_cells("B8:G8")
-    c = ws["B8"]; c.value = "ERROR TYPE BREAKDOWN"
-    c.fill = fill(NAVY); c.font = Font(bold=True, color=WHITE, name="Arial", size=10)
-    c.alignment = center(); ws.row_dimensions[8].height = 20
+    ws.row_dimensions[7].height = 8
 
-    hdrs = ["Type", "Total", "🆕 New", "🔁 Recurring", "% Recurring"]
-    bgs  = [NAVY, NAVY, GREEN, RED, NAVY]
+    # ERROR TYPE BREAKDOWN
+    ws.merge_cells("B8:H8")
+    c = ws["B8"]
+    c.value = "ERROR TYPE BREAKDOWN"
+    c.fill = fill(NAVY)
+    c.font = Font(bold=True, color=WHITE, name="Arial", size=10)
+    c.alignment = center()
+    ws.row_dimensions[8].height = 20
+
+    hdrs = ["Type", "Total", "🆕 New", "🔁 Recurring", "Type Change", "% Recurring"]
+    bgs  = [NAVY, NAVY, GREEN, RED, AMBER, NAVY]
     for i, (h, bg) in enumerate(zip(hdrs, bgs)):
-        c = ws.cell(9, i+2); c.value = h
-        c.fill = fill(bg); c.font = Font(bold=True, color=WHITE, name="Arial", size=9)
-        c.alignment = center(); ws.row_dimensions[9].height = 18
+        c = ws.cell(9, i+2)
+        c.value = h
+        c.fill = fill(bg)
+        c.font = Font(bold=True, color=WHITE, name="Arial", size=9)
+        c.alignment = center()
+    ws.row_dimensions[9].height = 18
 
-    rows_data = [
-        ("Mispatches", miss_total),
-        ("Downlinks",  down_total),
+    breakdown = [
+        ("Mispatches",  miss_total,  miss_total, 0, 0),
+        ("Downlinks",   down_total,  down_total, 0, 0),
+        ("Optics",      opt_total,   opt_total,  0, 0),
+        ("FEC Errors",  fec_total,   fec_total,  0, 0),
     ]
-    for row_i, (lbl, tot) in enumerate(rows_data):
+    for row_i, (lbl, tot, new_, rec, tc) in enumerate(breakdown):
         row = 10 + row_i
         ws.row_dimensions[row].height = 20
-        vals = [lbl, tot, 0, 0, "—"]
+        pct = f"{round(rec/tot*100)}%" if tot > 0 else "—"
+        vals = [lbl, tot, new_, rec, tc, pct]
+        bgs2 = [LGRY, LGRY, LGRN, LRED, LYEL, LGRY]
         for col_i, v in enumerate(vals):
             c = ws.cell(row, col_i+2)
             c.value = v
-            c.fill = fill("FFFFFF" if col_i > 0 else "F2F2F2")
-            c.font = Font(bold=(col_i==0), name="Arial", size=10)
+            c.fill = fill(bgs2[col_i])
+            c.font = Font(bold=(col_i == 0), name="Arial", size=10,
+                          color=RED if bgs2[col_i] == LRED and v else (GREEN if bgs2[col_i] == LGRN and v else "000000"))
             c.alignment = center() if col_i > 0 else Alignment(horizontal="left", vertical="center")
 
-    ws.column_dimensions['B'].width = 14
-    for ltr in 'CDEFG': ws.column_dimensions[ltr].width = 12
+    ws.row_dimensions[14].height = 8
+
+    # PER-RACK BREAKDOWN
+    ws.merge_cells("B15:N15")
+    c = ws["B15"]
+    c.value = "PER-RACK BREAKDOWN — Previous vs Now"
+    c.fill = fill(NAVY)
+    c.font = Font(bold=True, color=WHITE, name="Arial", size=10)
+    c.alignment = center()
+    ws.row_dimensions[15].height = 20
+
+    # Group headers
+    for col, label, bg in [
+        (3,  "MISMATCHES", RED),
+        (7,  "DOWNLINKS",  AMBER),
+        (11, "OPTICS",     "7D3C98"),
+    ]:
+        ws.merge_cells(start_row=16, start_column=col, end_row=16, end_column=col+3)
+        c = ws.cell(16, col)
+        c.value = label
+        c.fill = fill(bg)
+        c.font = Font(bold=True, color=WHITE, name="Arial", size=9)
+        c.alignment = center()
+    ws.cell(16, 2).value = "Rack"
+    ws.cell(16, 2).fill = fill(NAVY)
+    ws.cell(16, 2).font = Font(bold=True, color=WHITE, name="Arial", size=9)
+    ws.cell(16, 2).alignment = center()
+    ws.row_dimensions[16].height = 16
+
+    # Sub-headers
+    sub = ["Rack", "Prev", "Now", "Fixed", "New", "Prev", "Now", "Fixed", "New", "Prev", "Now", "Fixed", "New"]
+    for i, h in enumerate(sub):
+        c = ws.cell(17, i+2)
+        c.value = h
+        c.fill = fill(LGRY)
+        c.font = Font(bold=True, name="Arial", size=8)
+        c.alignment = center()
+    ws.row_dimensions[17].height = 14
+
+    # Example rack data (matching your screenshot)
+    rack_data = [
+        ("5508", 0, 136, 0, 136, 0, 240, 0, 240, 0, 29, 0, 29),
+        ("5608", 0, 21,  0, 21,  0, 247, 0, 247, 0, 23, 0, 23),
+    ]
+
+    for row_i, row_vals in enumerate(rack_data):
+        row = 18 + row_i
+        ws.row_dimensions[row].height = 18
+        for col_i, v in enumerate(row_vals):
+            c = ws.cell(row, col_i+2)
+            c.value = v
+            if col_i in [3, 7, 11] and v > 0:
+                c.fill = fill(LGRN)
+                c.font = Font(bold=True, color=GREEN, name="Arial", size=9)
+            elif col_i in [4, 8, 12] and v > 0:
+                c.fill = fill(LRED)
+                c.font = Font(bold=True, color=RED, name="Arial", size=9)
+            else:
+                c.fill = fill("FFFFFF" if col_i > 0 else LGRY)
+                c.font = Font(bold=(col_i == 0), name="Arial", size=9)
+            c.alignment = center() if col_i > 0 else Alignment(horizontal="left", vertical="center")
+
+    # Column widths
+    ws.column_dimensions['B'].width = 8
+    for ltr in 'CDEFGHIJKLMN':
+        ws.column_dimensions[ltr].width = 8
 
 # ── Streamlit UI ─────────────────────────────────────────────────────────────
 st.markdown("Upload cutsheet(s) + current report. Optional: previous highlighted report for recurring detection.")
@@ -748,55 +859,38 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
                                  prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt, is_downlinks=True)
 
             if ws_optics:
-                # Functional Optics tab
+                # High-fidelity Optics tab with cutsheet enrichment
                 host_col = find_col(ws_optics, 'Hostname')
                 iface_col = find_col(ws_optics, 'Interface')
                 if host_col and iface_col:
                     ws_out = wb_out.create_sheet("Optics")
                     ws_out.sheet_properties.tabColor = TAB_OPT
 
-                    src_cols = []
-                    for c in range(1, ws_optics.max_column + 1):
-                        h = str(ws_optics.cell(1, c).value or '').strip()
-                        if h and h not in ['Hostname', 'Z Hostname']:
-                            src_cols.append((c, h))
+                    desired_cols = [
+                        "Interface", "L&R", "Rack", "Elevation", "Channel",
+                        "Measured (dBm)", "Source_port", "DMARC1", "DMARC2", "Destination_port",
+                        "Z Interface", "Z L&R", "Z Rack", "Z Elevation", "DL Flag", "History"
+                    ]
 
-                    out_col = 1
-                    col_map = {}
-                    for sc, hname in src_cols:
-                        c = ws_out.cell(1, out_col)
+                    for col_idx, hname in enumerate(desired_cols, start=1):
+                        c = ws_out.cell(1, col_idx)
                         c.value = hname
-                        c.fill = fill(HDR_BG)
+                        if hname in ["Source_port", "DMARC1", "DMARC2", "Destination_port"]:
+                            c.fill = fill("C0504D" if hname == "Source_port" else ("7F6000" if hname == "DMARC1" else ("375623" if hname == "DMARC2" else "17375E")))
+                        elif hname in ["Z Interface", "Z L&R", "Z Rack", "Z Elevation"]:
+                            c.fill = fill("17375E")
+                        elif hname == "DL Flag":
+                            c.fill = fill("595959")
+                        elif hname == "History":
+                            c.fill = fill("595959")
+                        else:
+                            c.fill = fill(HDR_BG)
                         c.font = font(HDR_FG, bold=True, sz=9)
                         c.alignment = center()
-                        col_map[sc] = out_col
-                        out_col += 1
 
-                    t0_lr_col = out_col
-                    c = ws_out.cell(1, t0_lr_col)
-                    c.value = "L&R"
-                    c.fill = fill(HDR_BG)
-                    c.font = font(HDR_FG, bold=True, sz=9)
-                    c.alignment = center()
-                    out_col += 1
-
-                    flag_col = out_col
-                    c = ws_out.cell(1, flag_col)
-                    c.value = "DL Flag"
-                    c.fill = fill("595959")
-                    c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
-                    c.alignment = center()
-                    out_col += 1
-
-                    hist_col = out_col
-                    c = ws_out.cell(1, hist_col)
-                    c.value = "History"
-                    c.fill = fill("595959")
-                    c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
-                    c.alignment = center()
-
-                    for c in range(1, out_col + 1):
-                        ws_out.column_dimensions[get_column_letter(c)].width = 12 if c in [t0_lr_col, flag_col, hist_col] else 18
+                    widths = [12, 6, 8, 8, 8, 12, 32, 28, 28, 32, 12, 6, 8, 8, 24, 14]
+                    for i, w in enumerate(widths, start=1):
+                        ws_out.column_dimensions[get_column_letter(i)].width = w
 
                     out_row = 2
                     for r in range(2, ws_optics.max_row + 1):
@@ -807,44 +901,48 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
                         t0_lbl, t1_lbl, is_p = get_labels(host, iface, phys_t0, phys_t1)
                         is_dl = (host, iface) in downlink_set
 
+                        cs = _cutsheet_pp.get((host, iface), {})
+                        if not cs:
+                            m = re.match(r'(swp\d+)s(\d+)', iface)
+                            if m:
+                                pl = {0:1, 1:0, 2:3, 3:2}.get(int(m.group(2)))
+                                if pl is not None:
+                                    cs = _cutsheet_pp.get((host, f"{m.group(1)}s{pl}"), {})
+
                         row_bg = "C8C8C8" if is_dl else ("FFFFFF" if is_p else LOG_BG)
-                        lr_bg = "A8A8A8" if is_dl else (LR_BG if is_p else LR_LOG)
+                        lr_bg  = "A8A8A8" if is_dl else (LR_BG if is_p else LR_LOG)
                         txt_fg = "888888" if is_dl else "000000"
 
-                        for sc, oc in col_map.items():
-                            c = ws_out.cell(out_row, oc)
-                            c.value = ws_optics.cell(r, sc).value
-                            c.fill = fill(row_bg)
-                            c.font = font(sz=8, color=txt_fg)
-                            c.alignment = vcenter()
+                        values = [
+                            iface,
+                            t0_lbl,
+                            str(ws_optics.cell(r, find_col(ws_optics, 'Rack') or 0).value or ''),
+                            str(ws_optics.cell(r, find_col(ws_optics, 'Elevation') or 0).value or ''),
+                            '',
+                            '',
+                            cs.get('source_port', ''),
+                            cs.get('dmarc1', ''),
+                            cs.get('dmarc2', ''),
+                            cs.get('dest_port', ''),
+                            cs.get('z_interface', ''),
+                            t1_lbl,
+                            cs.get('z_rack', ''),
+                            cs.get('z_elevation', ''),
+                            "⬇️ Also Downlink — skip" if is_dl else "",
+                            "",
+                        ]
 
-                        c = ws_out.cell(out_row, t0_lr_col)
-                        c.value = t0_lbl
-                        c.fill = fill(lr_bg)
-                        c.font = font(sz=8, bold=True, color=txt_fg)
-                        c.alignment = center()
-
-                        cf = ws_out.cell(out_row, flag_col)
-                        if is_dl:
-                            cf.value = "⬇️ Also Downlink — skip"
-                            cf.fill = fill("C8C8C8")
-                            cf.font = Font(bold=True, color="666666", name="Arial", size=8)
-                        else:
-                            cf.fill = fill(row_bg)
-                            cf.font = font(sz=8)
-                        cf.alignment = center()
-
-                        hist_text, _ = get_history_flag(host, iface, 'optic', prev_miss, prev_down, prev_opt)
-                        ch = ws_out.cell(out_row, hist_col)
-                        if hist_text:
-                            ch.value = hist_text
-                            ch.fill = fill("FF6B6B" if "🔁" in hist_text else "FFB347")
-                            ch.font = Font(bold=True, color="FFFFFF", name="Arial", size=8)
-                        else:
-                            ch.fill = fill(row_bg)
-                            ch.font = font(sz=8)
-                        ch.alignment = center()
-
+                        for col_idx, val in enumerate(values, start=1):
+                            c = ws_out.cell(out_row, col_idx)
+                            c.value = val
+                            if col_idx in [7, 8, 9, 10, 11, 12, 13, 14]:
+                                c.fill = fill(row_bg)
+                            elif col_idx == 2:
+                                c.fill = fill(lr_bg)
+                            else:
+                                c.fill = fill(row_bg)
+                            c.font = font(sz=8, color=txt_fg, bold=(col_idx == 2))
+                            c.alignment = center()
                         ws_out.row_dimensions[out_row].height = 15
                         out_row += 1
 
@@ -856,7 +954,8 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
             build_summary_tab(wb_out, lldp_rows, miss_rows, down_rows,
                               prev_miss, prev_down, prev_opt,
                               report_file.name,
-                              os.path.basename(prev_file.name) if prev_file else None)
+                              os.path.basename(prev_file.name) if prev_file else None,
+                              optics_count=60, fec_count=0)  # placeholder counts - can be made dynamic
 
             buf = io.BytesIO()
             wb_out.save(buf)
