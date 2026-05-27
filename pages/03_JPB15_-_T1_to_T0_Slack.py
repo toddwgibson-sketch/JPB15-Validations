@@ -792,7 +792,7 @@ cutsheet_files = st.file_uploader("Cutsheet(s) — multiple allowed", type=["xls
 report_file = st.file_uploader("Current Slack Validation Report (.xlsx)", type=["xlsx"], key="slack_full_report")
 prev_file = st.file_uploader("Previous Highlighted Report (optional)", type=["xlsx"], key="slack_full_prev")
 
-if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
+if st.button("🚀 Process Report", type="primary",
              disabled=not (cutsheet_files and report_file)):
     temp_dir = tempfile.mkdtemp()
     log_capture = io.StringIO()
@@ -962,7 +962,7 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
             buf.seek(0)
             output_bytes = buf.getvalue()
 
-        st.success("✅ Report processed with full v9 fidelity!")
+        st.success("✅ Report processed")
         st.download_button(
             "📥 Download Highlighted Report",
             data=output_bytes,
@@ -975,4 +975,4 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-st.caption("Full fidelity conversion of highlight_slack_report_v9.py — old/new format + PP_info fallback preserved.")
+st.caption("")
