@@ -2,7 +2,7 @@ import streamlit as st
 from pathlib import Path
 
 st.set_page_config(
-    page_title="staging env",
+    page_title="test",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -65,4 +65,4 @@ with st.expander("FYI"):
     - Output files are downloaded directly to your machine — nothing is stored on the server
     """)
 
-st.caption("Internal tool • Quadconnect")
+st.caption("Internal tool • Quadconnect • ")
