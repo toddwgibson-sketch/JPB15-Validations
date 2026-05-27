@@ -27,7 +27,7 @@ def show_header(title: str, subtitle: str = ""):
             st.caption(subtitle)
 
 st.set_page_config(page_title="JPB15 T1-T0 LVV", page_icon="🔗", layout="wide")
-show_header("")
+show_header("JPB15 T1-T0 LVV")
 
 # ── All original constants and helper functions from the provided script ─────
 TAB_SUMM = "1F4E79"
