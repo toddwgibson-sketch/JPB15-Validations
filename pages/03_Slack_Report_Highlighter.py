@@ -722,10 +722,25 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
             wb_out.remove(wb_out.active)
 
             lldp_rows = miss_rows = down_rows = []
+            downlink_set = set()
+
             if ws_lldp:
                 lldp_rows = read_lldp_rows(ws_lldp, phys_t0, phys_t1, t1_rev)
                 miss_rows = [r for r in lldp_rows if r['row_type'] == 'mismatch']
                 down_rows = [r for r in lldp_rows if r['row_type'] == 'downlink']
+
+                # Build downlink_set for Optics cross-reference
+                act_if_col_lldp = find_col(ws_lldp, 'Act. Interface', 'Act.Interface')
+                host_col_lldp   = find_col(ws_lldp, 'Hostname')
+                iface_col_lldp  = find_col(ws_lldp, 'Interface')
+                if act_if_col_lldp and host_col_lldp and iface_col_lldp:
+                    for row in range(2, ws_lldp.max_row + 1):
+                        act_if = str(ws_lldp.cell(row, act_if_col_lldp).value or '').strip().lower()
+                        if act_if == 'interface down':
+                            h = str(ws_lldp.cell(row, host_col_lldp).value or '').strip()
+                            i = str(ws_lldp.cell(row, iface_col_lldp).value or '').strip()
+                            if h and i:
+                                downlink_set.add((h, i))
 
                 build_lldp_sheet(wb_out, "Mispatches", miss_rows, TAB_MISS, is_mismatch=True,
                                  prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt)
