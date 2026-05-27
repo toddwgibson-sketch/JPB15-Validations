@@ -28,7 +28,7 @@ def show_header(title: str, subtitle: str = ""):
             st.caption(subtitle)
 
 st.set_page_config(page_title="T1-T0 Slack", page_icon="📊", layout="wide")
-show_header("JPB15 T1-T0 Slack", "Full fidelity conversion — old + new format + PP_info fallback")
+show_header("JPB15 T1-T0 Slack")
 
 # ── All core constants and logic from the original v9 script ─────────────────
 WHITE      = "FFFFFF"
