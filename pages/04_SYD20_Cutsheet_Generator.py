@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 st.set_page_config(page_title=" SYD20 Cutsheet Formatter", page_icon="📋", layout="wide")
 st.title("SYD20 Cutsheet Formatter")
-st.caption("")
+st.caption("Might need to cache this script, its huge and runs the server out of memory")
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
 COLOR_RJ45        = '#FFCCCC'
