@@ -51,7 +51,7 @@ def show_header(title: str, subtitle: str = ""):
             st.caption(subtitle)
 
 st.set_page_config(page_title="LV Portal Validation Formatter", page_icon="🖥️", layout="wide")
-show_header("LV Portal Validation Formatter", "T0-T1 + Compute links • Cutsheet enrichment • History flags")
+
 
 # ── Colours (same as original) ────────────────────────────────────────────────
 WHITE   = "FFFFFF"
