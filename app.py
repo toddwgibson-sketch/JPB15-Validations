@@ -9,26 +9,38 @@ st.set_page_config(
 )
 
 # ── Header ───────────────────────────────────────────────────────────────────
-col_logo, col_title = st.columns([0.8, 6])
-
-with col_logo:
+def show_header(title: str, subtitle: str = ""):
+    # Logo on top
     logo_path = Path(__file__).parent / "assets" / "LOGO.jpg"
-    if logo_path.exists():
-        st.image(str(logo_path), width=255)
-    else:
-        st.markdown("<div style='font-size:42px; margin-top:-8px;'>🔧</div>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if logo_path.exists():
+            st.image(str(logo_path), width=220)
+        else:
+            st.markdown(
+                "<div style='font-size:48px; text-align:center; margin-bottom:8px;'>🔧</div>", 
+                unsafe_allow_html=True
+            )
 
-with col_title:
-    st.markdown("""
-    <h1 style='margin:0; padding:0; color:#FFFFFF; font-size:2.1rem; font-weight:700;'>
-        TEST - ignore the look and feel. function first
-    </h1>
-    <p style='margin:4px 0 0 0; color:#FFFFFF; font-size:1.05rem;'>
-        can make it pretty later
-    </p>
+    # Title + Subtitle
+    st.markdown(f"""
+        <div style="text-align: center; margin-top: 8px;">
+            <h1 style='margin:0; padding:0; color:#FFFFFF; font-size:2.0rem; font-weight:700;'>
+                {title}
+            </h1>
+            {f'<p style="margin:6px 0 0 0; color:#AAAAAA; font-size:1.05rem;">{subtitle}</p>' if subtitle else ''}
+        </div>
     """, unsafe_allow_html=True)
 
-st.divider()
+    st.divider()
+
+
+# ── Usage ─────────────────────────────────────────────────────────────
+show_header(
+    title="TEST - ignore the look and feel. function first",
+    subtitle="can make it pretty later"
+)
 
 # ── Welcome ──────────────────────────────────────────────────────────────────
 st.markdown("""
