@@ -430,7 +430,7 @@ if mode == "Split by room (requires Row Breakdown)":
     breakdown_file = st.file_uploader("Row Breakdown file (.xlsx)", type=["xlsx"])
 
 if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file):
-    with st.spinner("Processing... This can take a minute for large files."):
+    with st.spinner("Processing... This can take a few minutes for large allconnect sheets."):
         try:
             # Read input
             df_all = pd.read_excel(input_file, dtype=str).fillna('')
