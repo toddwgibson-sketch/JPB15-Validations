@@ -514,4 +514,4 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
             st.error(f"Error: {str(e)}")
             st.exception(e)
 
-st.caption("Full fidelity conversion from Tkinter • Old + new formats supported • Same output as original script")
+st.caption("")
