@@ -33,7 +33,6 @@ st.divider()
 # ── Welcome ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="max-width:820px;">
-<h3 style="margin-bottom:8px;">Welcome 👋</h3>
 <p style="color:#4A5568; font-size:1.02rem; line-height:1.55;">
 One stop shop.
 </p>
