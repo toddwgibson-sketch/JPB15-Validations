@@ -38,7 +38,7 @@ def show_header(title: str, subtitle: str = ""):
 
 # ── Usage ─────────────────────────────────────────────────────────────
 show_header(
-    title="TEST - ignore the look and feel. function first",
+    title="TEST",
     subtitle="can make it pretty later"
 )
 
