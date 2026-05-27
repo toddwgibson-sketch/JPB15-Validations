@@ -44,7 +44,7 @@ def show_header(title: str, subtitle: str = ""):
         if logo_path.exists():
             st.image(str(logo_path), width=0)
         else:
-            st.markdown("### 🔧")
+            st.markdown("")
     with col2:
         st.markdown(f"### {title}")
         if subtitle:
