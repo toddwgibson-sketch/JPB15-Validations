@@ -16,7 +16,7 @@ def show_header(title: str, subtitle: str = ""):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if logo_path.exists():
-            st.image(str(logo_path), width=220)
+            st.image(str(logo_path), width=880)
         else:
             st.markdown(
                 "<div style='font-size:48px; text-align:center; margin-bottom:8px;'>🔧</div>", 
