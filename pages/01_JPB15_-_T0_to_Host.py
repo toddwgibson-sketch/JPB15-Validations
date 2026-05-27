@@ -32,7 +32,6 @@ from datetime import datetime
 from collections import Counter
 
 import streamlit as st
-from pathlib import Path
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -41,15 +40,18 @@ from openpyxl.utils import get_column_letter
 def show_header(title: str, subtitle: str = ""):
     col1, col2 = st.columns([1, 8])
     with col1:
-        logo_path = Path(__file__).parent.parent / "assets" / "logo.png"
+        logo_path = Path(__file__).parent.parent / "assets" / "LOGO.png"
         if logo_path.exists():
-            st.image(str(logo_path), width=70)
+            st.image(str(logo_path), width=130)
         else:
             st.markdown("### 🔧")
     with col2:
         st.markdown(f"### {title}")
         if subtitle:
             st.caption(subtitle)
+
+st.set_page_config(page_title="LV Portal Validation Formatter", page_icon="🖥️", layout="wide")
+show_header("LV Portal Validation Formatter", "T0-T1 + Compute links • Cutsheet enrichment • History flags")
 
 # ── Colours (same as original) ────────────────────────────────────────────────
 WHITE   = "FFFFFF"
@@ -80,22 +82,8 @@ def center(): return Alignment(horizontal="center", vertical="center")
 def left():   return Alignment(horizontal="left",   vertical="center")
 def vcenter(): return Alignment(horizontal="left", vertical="center")
 
-# ── Config (kept for compatibility, but unused in Streamlit) ─────────────────
-CONFIG_FILE = os.path.expanduser("~/.lv_portal_config.json")
-
-def load_config():
-    try:
-        with open(CONFIG_FILE) as f: return json.load(f)
-    except: return {}
-
-def save_config(cfg):
-    try:
-        with open(CONFIG_FILE, 'w') as f: json.dump(cfg, f, indent=2)
-    except: pass
-
 # ── Cutsheet loaders (UNCHANGED) ─────────────────────────────────────────────
 def build_lookup(paths):
-    """Build T1 reverse lookup from one or more cutsheets."""
     if isinstance(paths, str): paths = [paths]
     t0     = {}
     t1     = {}
@@ -258,10 +246,10 @@ def draw_compute_borders(ws, host_col, port_col):
 def draw_row_borders(ws):
     thin   = Side(style="thin",   color="AAAAAA")
     medium = Side(style="medium", color="555555")
-    for rr in range(2, ws.max_row + 1):
+    for rr in range(1, ws.max_row + 1):
         for cc in range(1, ws.max_column + 1):
             ws.cell(rr, cc).border = Border(
-                top    = medium if rr == 2 else thin,
+                top    = medium if rr == 1 else thin,
                 bottom = medium if rr == ws.max_row else thin,
                 left   = medium if cc == 1 else thin,
                 right  = medium if cc == ws.max_column else thin,
@@ -285,7 +273,7 @@ def write_data_cell(ws, row, col, value, bg="FFFFFF", bold=False, sz=9, align=No
     c.font  = Font(bold=bold, color="000000", name="Arial", size=sz)
     c.alignment = align or center()
 
-# ── Core processing (UNCHANGED except minor print tweaks) ────────────────────
+# ── Core processing (UNCHANGED) ──────────────────────────────────────────────
 def process_lldp(ws_src, t0, t1, t1_rev, t0_to_pp=None):
     t0_to_pp = t0_to_pp or {}
     raw = []
@@ -1005,8 +993,8 @@ def build_compute_optics_sheet(wb_out, ws_src, ghost_hosts, t0, t1, compute_look
         comp_cs = cs_lookup(compute_lookup, remote_dev, remote_port)
         comp_rack_full = comp_cs.get('comp_rack', '')
         _cr = _opr.match(r'Rack (\d+) U(\d+)', comp_rack_full)
-        comp_rack_num = f"Rack {_cr.group(1)}" if _cr else ''
-        comp_u        = f"U{_cr.group(2)}"      if _cr else ''
+        comp_rack = f"Rack {_cr.group(1)}" if _cr else ''
+        comp_u    = f"U{_cr.group(2)}"      if _cr else ''
         cs = compute_lookup.get((src_dev, src_port), {})
         if not cs:
             _ml = _opr.match(r'(swp\d+s)(\d+)', src_port)
@@ -1039,7 +1027,7 @@ def build_compute_optics_sheet(wb_out, ws_src, ghost_hosts, t0, t1, compute_look
             'ohr':        comp_cs.get('ohr',     '') or cs.get('ohr',     ''),
             'fdf':        comp_cs.get('fdf',     '') or cs.get('fdf',     ''),
             't0_pp':      comp_cs.get('t0_pp',   '') or cs.get('t0_pp',   ''),
-            'comp_rack':  comp_rack_num, 'comp_u': comp_u,
+            'comp_rack':  comp_rack, 'comp_u': comp_u,
             'comp_is_phys': comp_is_phys,
         })
     if not rows: return
@@ -1070,8 +1058,8 @@ def build_compute_optics_sheet(wb_out, ws_src, ghost_hosts, t0, t1, compute_look
         bgs  = [bg, lr_bg, bg, bg, "FFF2CC","E2F0D9","D9EAF7",
                 rx_bg, "E2F0D9", comp_port_bg, "FDDCB5",
                 "E2F0D9","E2F0D9", flag_bg]
-        for col, (val, cell_bg) in enumerate(zip(vals, bgs), start=1):
-            c = ws.cell(r_idx, col); c.value = val; c.fill = fill(cell_bg)
+        for col, (val, bg) in enumerate(zip(vals, bgs), start=1):
+            c = ws.cell(r_idx, col); c.value = val; c.fill = fill(bg)
             txt_fg = "888888" if (rd.get('is_flat') or rd.get('is_missing')) else "000000"
             bold = col==2 or (col==len(vals) and bool(flag_txt))
             c.font = Font(bold=bold, color=txt_fg, name="Arial", size=9)
@@ -1260,246 +1248,227 @@ def build_compute_fec_sheet(wb_out, ws_src, ghost_hosts, compute_lookup=None):
 # ── Streamlit App ────────────────────────────────────────────────────────────
 def main():
     st.set_page_config(
-        page_title="T0 to Hostr",
+        page_title="LV Portal Validation Formatter",
         page_icon="🖥️",
-        layout="wide",
-        initial_sidebar_state="expanded"
+        layout="wide"
     )
-    show_header("T0 to Host", "")
+    show_header("LV Portal Validation Formatter", "T0-T1 + Compute links • Cutsheet enrichment • History flags")
 
-    st.title("🔧 test")
     st.markdown("""
-    **Streamlit web version** — converts LV Portal validation exports into a clean, color-coded multi-tab Excel report.
-    
-    - Upload **Cutsheet(s)** (required)
-    - Upload **LV Portal Validation Export** (required)
-    - (Optional) Upload **T0/T1 Installation cutsheet(s)** for full L&R labels + patch panel data in Mispatches/Downlinks/Optics
-    - (Optional) Upload **Previous formatted report** for recurring / history flags
+    Upload the required files below and click **Process Report**.
     """)
 
-    with st.sidebar:
-        st.header("Upload Files")
+    # ── Upload section (main area, matching other pages) ─────────────────────
+    col1, col2 = st.columns(2)
+
+    with col1:
         gpu_files = st.file_uploader(
-            "GPU / Compute Cutsheet(s)  —  multiple allowed",
+            "GPU / Compute Cutsheet(s) — multiple allowed",
             type=["xlsx"],
             accept_multiple_files=True,
-            help="Cutsheet(s) containing GPU/Compute to T0 mappings (new or old format supported)"
+            key="gpu_main"
         )
         report_file = st.file_uploader(
             "LV Portal Validation Export (.xlsx)",
             type=["xlsx"],
-            accept_multiple_files=False,
-            help="The raw LV Portal report containing LLDP Mismatch / Interface Down / Optics / FEC tabs"
+            key="report_main"
         )
+
+    with col2:
         install_files = st.file_uploader(
-            "T0/T1 Installation Cutsheet(s)  —  optional",
+            "T0/T1 Installation Cutsheet(s) — optional",
             type=["xlsx"],
             accept_multiple_files=True,
-            help="Installation cutsheet(s) with T0-T1 patch panel data (for L&R labels and full PP matrix)"
+            key="install_main"
         )
         prev_file = st.file_uploader(
-            "Previous Formatted Report  —  optional (for history flags)",
+            "Previous Formatted Report — optional (for history flags)",
             type=["xlsx"],
-            accept_multiple_files=False,
-            help="A previously generated _formatted.xlsx to detect recurring issues"
+            key="prev_main"
         )
-
-        st.divider()
-        st.caption("Processing uses the exact same logic as the original script.")
-        run_btn = st.button("🚀 Process Report", type="primary", use_container_width=True,
-                            disabled=not (gpu_files and report_file))
-
-    if not run_btn:
-        st.info("Upload the required files on the left and click **Process Report** to begin.")
-        st.stop()
-
-    # ── Processing ───────────────────────────────────────────────────────────
-    temp_dir = tempfile.mkdtemp(prefix="lv_portal_")
-    log_capture = io.StringIO()
-
-    try:
-        with contextlib.redirect_stdout(log_capture):
-            print("=" * 60)
-            print("  LV Portal Validation Formatter (Streamlit)")
-            print("=" * 60)
-
-            # Write uploaded files to temp
-            gpu_paths = []
-            for i, f in enumerate(gpu_files):
-                p = os.path.join(temp_dir, f"gpu_{i}_{f.name}")
-                with open(p, "wb") as out_f:
-                    out_f.write(f.getbuffer())
-                gpu_paths.append(p)
-            print(f"  GPU cutsheets: {[os.path.basename(p) for p in gpu_paths]}")
-
-            report_path = os.path.join(temp_dir, f"report_{report_file.name}")
-            with open(report_path, "wb") as out_f:
-                out_f.write(report_file.getbuffer())
-
-            prev_report_path = None
-            if prev_file:
-                prev_report_path = os.path.join(temp_dir, f"prev_{prev_file.name}")
-                with open(prev_report_path, "wb") as out_f:
-                    out_f.write(prev_file.getbuffer())
-
-            install_paths = []
-            if install_files:
-                for i, f in enumerate(install_files):
-                    p = os.path.join(temp_dir, f"install_{i}_{f.name}")
-                    with open(p, "wb") as out_f:
-                        out_f.write(f.getbuffer())
-                    install_paths.append(p)
-                print(f"  Installation cutsheets: {[os.path.basename(p) for p in install_paths]}")
-
-            # Load lookups
-            print("\nLoading GPU/Compute cutsheet(s)...")
-            compute_lookup = build_compute_lookup(gpu_paths)
-
-            t0, t1, t1_rev, t0_to_pp = {}, {}, {}, {}
-            if install_paths:
-                print("\nLoading T0/T1 installation cutsheet(s)...")
-                t0, t1, t1_rev, t0_to_pp = build_lookup(install_paths)
-
-            # Previous report
-            prev_miss, prev_down, prev_opt, prev_rack_map = set(), set(), set(), {}
-            if prev_report_path:
-                print("\nLoading previous report for history comparison...")
-                prev_miss, prev_down, prev_opt, prev_rack_map = get_prev_issues_lv(prev_report_path)
-
-            # Load source workbook
-            print(f"\nProcessing report: {os.path.basename(report_path)}")
-            wb_src = load_workbook(report_path)
-
-            def find_sheet(wb, *patterns):
-                for name in wb.sheetnames:
-                    for p in patterns:
-                        if p.lower() in name.lower():
-                            return wb[name]
-                return None
-
-            ws_lldp       = find_sheet(wb_src, 'lldp mismatch', 'lldp', 'mismatch')
-            ws_iface_down = find_sheet(wb_src, 'interface down', 'interface_down')
-            ws_optics     = find_sheet(wb_src, 'optic errors', 'optic')
-            ws_comp_fec   = find_sheet(wb_src, 'fec_ber', 'fec')
-            ws_comp_opt   = find_sheet(wb_src, 'optic errors', 'optic')
-
-            if not ws_lldp:
-                print("ERROR: Could not find LLDP / Mismatch sheet in the report.")
-                st.error("Could not find LLDP / Mismatch sheet in the uploaded report.")
-                st.stop()
-
-            # Process LLDP (T0-T1)
-            print("\nProcessing LLDP Mismatches & Downlinks (T0-T1 links)...")
-            miss_rows, down_rows = process_lldp(ws_lldp, t0, t1, t1_rev, t0_to_pp)
-
-            # Process Compute LLDP
-            print("\nProcessing Compute (T0,Host) LLDP errors...")
-            compute_real, compute_ghost, ghost_hosts = process_compute_lldp(ws_lldp, compute_lookup)
-
-            # Merge Interface Down if present
-            if ws_iface_down:
-                print("\nProcessing Interface Down tab (compute links)...")
-                id_real, id_ghost, id_ghosts = process_interface_down(ws_iface_down, compute_lookup)
-                compute_real.extend(id_real)
-                compute_ghost.extend(id_ghost)
-                ghost_hosts = ghost_hosts | id_ghosts
-                if id_real or id_ghost:
-                    print(f"  Merged {len(id_real)} real + {len(id_ghost)} ghost rows from Interface Down")
-
-            print(f"\n  → Mismatches: {len(miss_rows)} | Downlinks: {len(down_rows)}")
-            print(f"  → Host Link Errors: {len(compute_real)} | Ghost hosts: {len(compute_ghost)}")
-
-            downlink_set = {(rd['host'], rd['iface']) for rd in down_rows}
-
-            # Build output workbook
-            print("\nBuilding formatted output workbook...")
-            wb_out = Workbook()
-            wb_out.remove(wb_out.active)
-
-            if miss_rows:
-                build_mispatches_sheet(wb_out, miss_rows, prev_miss=prev_miss, prev_down=prev_down)
-            if down_rows:
-                build_downlinks_sheet(wb_out, down_rows, prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt)
-
-            fec_rows = build_compute_fec_sheet(wb_out, ws_comp_fec, ghost_hosts, compute_lookup)
-
-            # Summary optics list (simplified)
-            opt_rows_for_summary = []
-            if ws_comp_opt:
-                for _r in range(2, ws_comp_opt.max_row + 1):
-                    _remote = str(ws_comp_opt.cell(_r, 1).value or '').strip()
-                    _rx = str(ws_comp_opt.cell(_r, 6).value or '').strip()
-                    if is_compute(_remote) and _remote not in ghost_hosts:
-                        opt_rows_for_summary.append({'is_flat': '-40' in _rx})
-
-            build_compute_summary(wb_out, compute_real, compute_ghost, ghost_hosts,
-                                  opt_rows_for_summary, os.path.basename(report_path),
-                                  fec_rows=fec_rows)
-
-            if compute_real:
-                build_compute_sheet(wb_out, compute_real, "Downlinks", "70AD47",
-                                    prev_miss=prev_miss, prev_down=prev_down)
-            if compute_ghost:
-                build_compute_sheet(wb_out, compute_ghost, "Ghost Links", "808080",
-                                    prev_miss=prev_miss, prev_down=prev_down)
-
-            build_compute_optics_sheet(wb_out, ws_comp_opt, ghost_hosts, t0, t1, compute_lookup)
-
-            if ws_optics:
-                build_optics_sheet(wb_out, ws_optics, t0, t1, t1_rev, downlink_set, t0_to_pp,
-                                   prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt)
-
-            # Save to memory
-            output_buffer = io.BytesIO()
-            wb_out.save(output_buffer)
-            output_buffer.seek(0)
-            output_bytes = output_buffer.getvalue()
-
-            print("\n" + "=" * 60)
-            print("  Processing complete — ready for download")
-            print("=" * 60)
-
-    except Exception as e:
-        print(f"\nFATAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        st.error(f"Processing failed: {e}")
-        with st.expander("Full error traceback"):
-            st.code(traceback.format_exc())
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        st.stop()
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-    # ── Results UI ───────────────────────────────────────────────────────────
-    st.success("✅ Report processed successfully!")
-
-    # Quick metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Mispatches (T0-T1)", len(miss_rows))
-    c2.metric("Downlinks (T0-T1)", len(down_rows))
-    c3.metric("Host Link Errors", len(compute_real))
-    c4.metric("Ghost Hosts", len(ghost_hosts))
 
     st.divider()
 
-    # Download
-    base_name = os.path.splitext(report_file.name)[0]
-    st.download_button(
-        label="📥 Download Formatted Excel Report",
-        data=output_bytes,
-        file_name=f"{base_name}_formatted.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        type="primary"
-    )
+    if st.button("🚀 Process Report", type="primary", use_container_width=True,
+                 disabled=not (gpu_files and report_file)):
+        # Processing logic remains exactly the same as before
+        temp_dir = tempfile.mkdtemp(prefix="lv_portal_")
+        log_capture = io.StringIO()
 
-    st.caption("The downloaded file contains the same tabs and formatting as the original desktop version "
-               "(Summary, Mispatches, Downlinks, Compute Downlinks, Ghost Links, Compute Optics, FEC Errors, Optics).")
+        try:
+            with contextlib.redirect_stdout(log_capture):
+                print("=" * 60)
+                print("  LV Portal Validation Formatter (Streamlit)")
+                print("=" * 60)
 
-    # Log
-    with st.expander("📜 Processing Log (detailed)", expanded=False):
-        st.text_area("Log output", log_capture.getvalue(), height=400, label_visibility="collapsed")
+                # Write uploaded files to temp
+                gpu_paths = []
+                for i, f in enumerate(gpu_files):
+                    p = os.path.join(temp_dir, f"gpu_{i}_{f.name}")
+                    with open(p, "wb") as out_f:
+                        out_f.write(f.getbuffer())
+                    gpu_paths.append(p)
+
+                report_path = os.path.join(temp_dir, f"report_{report_file.name}")
+                with open(report_path, "wb") as out_f:
+                    out_f.write(report_file.getbuffer())
+
+                prev_report_path = None
+                if prev_file:
+                    prev_report_path = os.path.join(temp_dir, f"prev_{prev_file.name}")
+                    with open(prev_report_path, "wb") as out_f:
+                        out_f.write(prev_file.getbuffer())
+
+                install_paths = []
+                if install_files:
+                    for i, f in enumerate(install_files):
+                        p = os.path.join(temp_dir, f"install_{i}_{f.name}")
+                        with open(p, "wb") as out_f:
+                            out_f.write(f.getbuffer())
+                        install_paths.append(p)
+
+                # Load lookups
+                print("\nLoading GPU/Compute cutsheet(s)...")
+                compute_lookup = build_compute_lookup(gpu_paths)
+
+                t0, t1, t1_rev, t0_to_pp = {}, {}, {}, {}
+                if install_paths:
+                    print("\nLoading T0/T1 installation cutsheet(s)...")
+                    t0, t1, t1_rev, t0_to_pp = build_lookup(install_paths)
+
+                # Previous report
+                prev_miss, prev_down, prev_opt, prev_rack_map = set(), set(), set(), {}
+                if prev_report_path:
+                    print("\nLoading previous report for history comparison...")
+                    prev_miss, prev_down, prev_opt, prev_rack_map = get_prev_issues_lv(prev_report_path)
+
+                # Load source workbook
+                print(f"\nProcessing report: {os.path.basename(report_path)}")
+                wb_src = load_workbook(report_path)
+
+                def find_sheet(wb, *patterns):
+                    for name in wb.sheetnames:
+                        for p in patterns:
+                            if p.lower() in name.lower():
+                                return wb[name]
+                    return None
+
+                ws_lldp       = find_sheet(wb_src, 'lldp mismatch', 'lldp', 'mismatch')
+                ws_iface_down = find_sheet(wb_src, 'interface down', 'interface_down')
+                ws_optics     = find_sheet(wb_src, 'optic errors', 'optic')
+                ws_comp_fec   = find_sheet(wb_src, 'fec_ber', 'fec')
+                ws_comp_opt   = find_sheet(wb_src, 'optic errors', 'optic')
+
+                if not ws_lldp:
+                    print("ERROR: Could not find LLDP / Mismatch sheet in the report.")
+                    st.error("Could not find LLDP / Mismatch sheet in the uploaded report.")
+                    st.stop()
+
+                # Process LLDP (T0-T1)
+                print("\nProcessing LLDP Mismatches & Downlinks (T0-T1 links)...")
+                miss_rows, down_rows = process_lldp(ws_lldp, t0, t1, t1_rev, t0_to_pp)
+
+                # Process Compute LLDP
+                print("\nProcessing Compute (T0,Host) LLDP errors...")
+                compute_real, compute_ghost, ghost_hosts = process_compute_lldp(ws_lldp, compute_lookup)
+
+                # Merge Interface Down if present
+                if ws_iface_down:
+                    print("\nProcessing Interface Down tab (compute links)...")
+                    id_real, id_ghost, id_ghosts = process_interface_down(ws_iface_down, compute_lookup)
+                    compute_real.extend(id_real)
+                    compute_ghost.extend(id_ghost)
+                    ghost_hosts = ghost_hosts | id_ghosts
+
+                print(f"\n  → Mismatches: {len(miss_rows)} | Downlinks: {len(down_rows)}")
+                print(f"  → Host Link Errors: {len(compute_real)} | Ghost hosts: {len(compute_ghost)}")
+
+                downlink_set = {(rd['host'], rd['iface']) for rd in down_rows}
+
+                # Build output workbook
+                print("\nBuilding formatted output workbook...")
+                wb_out = Workbook()
+                wb_out.remove(wb_out.active)
+
+                if miss_rows:
+                    build_mispatches_sheet(wb_out, miss_rows, prev_miss=prev_miss, prev_down=prev_down)
+                if down_rows:
+                    build_downlinks_sheet(wb_out, down_rows, prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt)
+
+                fec_rows = build_compute_fec_sheet(wb_out, ws_comp_fec, ghost_hosts, compute_lookup)
+
+                opt_rows_for_summary = []
+                if ws_comp_opt:
+                    for _r in range(2, ws_comp_opt.max_row + 1):
+                        _remote = str(ws_comp_opt.cell(_r, 1).value or '').strip()
+                        _rx = str(ws_comp_opt.cell(_r, 6).value or '').strip()
+                        if is_compute(_remote) and _remote not in ghost_hosts:
+                            opt_rows_for_summary.append({'is_flat': '-40' in _rx})
+
+                build_compute_summary(wb_out, compute_real, compute_ghost, ghost_hosts,
+                                      opt_rows_for_summary, os.path.basename(report_path),
+                                      fec_rows=fec_rows)
+
+                if compute_real:
+                    build_compute_sheet(wb_out, compute_real, "Downlinks", "70AD47",
+                                        prev_miss=prev_miss, prev_down=prev_down)
+                if compute_ghost:
+                    build_compute_sheet(wb_out, compute_ghost, "Ghost Links", "808080",
+                                        prev_miss=prev_miss, prev_down=prev_down)
+
+                build_compute_optics_sheet(wb_out, ws_comp_opt, ghost_hosts, t0, t1, compute_lookup)
+
+                if ws_optics:
+                    build_optics_sheet(wb_out, ws_optics, t0, t1, t1_rev, downlink_set, t0_to_pp,
+                                       prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt)
+
+                # Save to memory
+                output_buffer = io.BytesIO()
+                wb_out.save(output_buffer)
+                output_buffer.seek(0)
+                output_bytes = output_buffer.getvalue()
+
+                print("\n" + "=" * 60)
+                print("  Processing complete — ready for download")
+                print("=" * 60)
+
+        except Exception as e:
+            print(f"\nFATAL ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            st.error(f"Processing failed: {e}")
+            with st.expander("Full error traceback"):
+                st.code(traceback.format_exc())
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            st.stop()
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        # ── Results UI ───────────────────────────────────────────────────────
+        st.success("✅ Report processed successfully!")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Mispatches (T0-T1)", len(miss_rows))
+        c2.metric("Downlinks (T0-T1)", len(down_rows))
+        c3.metric("Host Link Errors", len(compute_real))
+        c4.metric("Ghost Hosts", len(ghost_hosts))
+
+        st.divider()
+
+        base_name = os.path.splitext(report_file.name)[0]
+        st.download_button(
+            label="📥 Download Formatted Excel Report",
+            data=output_bytes,
+            file_name=f"{base_name}_formatted.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            type="primary"
+        )
+
+        st.caption("The downloaded file contains the same tabs and formatting as the original desktop version.")
+
+        with st.expander("📜 Processing Log (detailed)", expanded=False):
+            st.text_area("Log output", log_capture.getvalue(), height=400, label_visibility="collapsed")
 
 if __name__ == "__main__":
     main()
