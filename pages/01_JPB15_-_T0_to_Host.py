@@ -42,7 +42,7 @@ def show_header(title: str, subtitle: str = ""):
     with col1:
         logo_path = Path(__file__).parent.parent / "assets" / "LOGO.png"
         if logo_path.exists():
-            st.image(str(logo_path), width=)
+            st.image(str(logo_path), width=0)
         else:
             st.markdown("### 🔧")
     with col2:
