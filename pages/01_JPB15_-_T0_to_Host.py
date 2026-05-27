@@ -1252,7 +1252,7 @@ def main():
         page_icon="🖥️",
         layout="wide"
     )
-    show_header("LV Portal Validation Formatter", "T0-T1 + Compute links • Cutsheet enrichment • History flags")
+    show_header("JPB15 T0 to Host", "")
 
     st.markdown("""
     Upload the required files below and click **Process Report**.
