@@ -2,7 +2,7 @@ import streamlit as st
 from pathlib import Path
 
 st.set_page_config(
-    page_title="LV Portal Validation Suite",
+    page_title="TEST - ignore the terrible naming, it finds it in the code",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
