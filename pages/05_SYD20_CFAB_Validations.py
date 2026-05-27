@@ -555,7 +555,8 @@ def process_file_to_bytes(input_bytes, lookup, device_rack_lookup):
 
     try:
      rack = "output"
-if "LLDP Mismatch + Link Down" in wb.sheetnames:
+    if "LLDP Mismatch + Link Down" 
+    in wb.sheetnames:
     rack = rack_number_from(wb["LLDP Mismatch + Link Down"])
 
         split_lldp_sheet(wb)
