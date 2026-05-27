@@ -1260,7 +1260,7 @@ def build_compute_fec_sheet(wb_out, ws_src, ghost_hosts, compute_lookup=None):
 # ── Streamlit App ────────────────────────────────────────────────────────────
 def main():
     st.set_page_config(
-        page_title="Compute Link Validator",
+        page_title="T0 to Hostr",
         page_icon="🖥️",
         layout="wide",
         initial_sidebar_state="expanded"
