@@ -554,8 +554,9 @@ def process_file_to_bytes(input_bytes, lookup, device_rack_lookup):
         tmp_in_path = tmp_in.name
 
     try:
-        wb = openpyxl.load_workbook(tmp_in_path)
-        rack = rack_number_from(wb.get("LLDP Mismatch + Link Down", wb.active))
+     rack = "output"
+if "LLDP Mismatch + Link Down" in wb.sheetnames:
+    rack = rack_number_from(wb["LLDP Mismatch + Link Down"])
 
         split_lldp_sheet(wb)
         clean_columns(wb)
