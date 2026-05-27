@@ -12,8 +12,8 @@ import os
 from collections import defaultdict
 
 st.set_page_config(page_title="Rack Validation Formatter", page_icon="🗄️", layout="wide")
-st.title("Rack Validation Formatter")
-st.caption("CFAB cutsheet enrichment + long/short path splitting + professional formatting (full fidelity conversion)")
+st.title("SYD20 CFAB")
+st.caption("")
 
 # ---------------------------------------------------------------------------
 # Style constants (from original)
