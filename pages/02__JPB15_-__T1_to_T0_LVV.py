@@ -26,8 +26,8 @@ def show_header(title: str, subtitle: str = ""):
         if subtitle:
             st.caption(subtitle)
 
-st.set_page_config(page_title="QFAB / T1→T0 Validator", page_icon="🔗", layout="wide")
-show_header("QFAB / T1→T0 Validator", "Full fidelity conversion of lv_portal_formatter.qfabt0")
+st.set_page_config(page_title="JPB15 T1-T0 LVV", page_icon="🔗", layout="wide")
+show_header("")
 
 # ── All original constants and helper functions from the provided script ─────
 TAB_SUMM = "1F4E79"
