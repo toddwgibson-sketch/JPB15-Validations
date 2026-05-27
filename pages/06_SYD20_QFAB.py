@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 st.set_page_config(page_title="SYD20 QFAB", page_icon="📊", layout="wide")
-st.title("SY20 QFAB")
+st.title("SYD20 QFAB")
 st.caption("Combine multiple per-building audit files into one enriched workbook (full fidelity conversion)")
 
 # ─────────────────────────────────────────────────────────────────── Styles ──
@@ -497,7 +497,7 @@ st.markdown("### Upload Files")
 cutsheet_file = st.file_uploader("Cutsheet (.xlsx)", type=["xlsx"], key="cutsheet_main")
 input_files = st.file_uploader("Input audit files (multiple allowed)", type=["xlsx"], accept_multiple_files=True, key="inputs_main")
 
-if st.button("🚀 Combine & Enrich", type="primary", disabled=not (cutsheet_file and input_files)):
+if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files)):
     with st.spinner("Processing files... This can take a while for large datasets."):
         try:
             result_bytes, filename = process_files(cutsheet_file.getvalue(), input_files)
