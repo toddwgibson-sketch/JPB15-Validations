@@ -76,7 +76,7 @@ TAB_OPT  = "9933FF"
 TAB_FEC  = "0070C0"
 
 def fill(h):  return PatternFill("solid", fgColor=h)
-def font(color="000000", bold=False, sz=9, italic=False):
+def font(color="000000", bold=False, sz=11, italic=False):
     return Font(bold=bold, italic=italic, color=color, name="Arial", size=sz)
 def center(): return Alignment(horizontal="center", vertical="center")
 def left():   return Alignment(horizontal="left",   vertical="center")
