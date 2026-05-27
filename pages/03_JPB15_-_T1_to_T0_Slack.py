@@ -27,8 +27,8 @@ def show_header(title: str, subtitle: str = ""):
         if subtitle:
             st.caption(subtitle)
 
-st.set_page_config(page_title="Slack Report Highlighter v9", page_icon="📊", layout="wide")
-show_header("Slack Report Highlighter v9", "Full fidelity conversion — old + new format + PP_info fallback")
+st.set_page_config(page_title="T1-T0 Slack", page_icon="📊", layout="wide")
+show_header("JPB15 T1-T0 Slack", "Full fidelity conversion — old + new format + PP_info fallback")
 
 # ── All core constants and logic from the original v9 script ─────────────────
 WHITE      = "FFFFFF"
