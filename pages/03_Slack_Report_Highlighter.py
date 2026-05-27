@@ -733,7 +733,107 @@ if st.button("🚀 Process & Highlight Report (Full Fidelity)", type="primary",
                                  prev_miss=prev_miss, prev_down=prev_down, prev_opt=prev_opt, is_downlinks=True)
 
             if ws_optics:
-                pass  # Core logic preserved — full per-channel expansion available if needed
+                # Functional Optics tab
+                host_col = find_col(ws_optics, 'Hostname')
+                iface_col = find_col(ws_optics, 'Interface')
+                if host_col and iface_col:
+                    ws_out = wb_out.create_sheet("Optics")
+                    ws_out.sheet_properties.tabColor = TAB_OPT
+
+                    src_cols = []
+                    for c in range(1, ws_optics.max_column + 1):
+                        h = str(ws_optics.cell(1, c).value or '').strip()
+                        if h and h not in ['Hostname', 'Z Hostname']:
+                            src_cols.append((c, h))
+
+                    out_col = 1
+                    col_map = {}
+                    for sc, hname in src_cols:
+                        c = ws_out.cell(1, out_col)
+                        c.value = hname
+                        c.fill = fill(HDR_BG)
+                        c.font = font(HDR_FG, bold=True, sz=9)
+                        c.alignment = center()
+                        col_map[sc] = out_col
+                        out_col += 1
+
+                    t0_lr_col = out_col
+                    c = ws_out.cell(1, t0_lr_col)
+                    c.value = "L&R"
+                    c.fill = fill(HDR_BG)
+                    c.font = font(HDR_FG, bold=True, sz=9)
+                    c.alignment = center()
+                    out_col += 1
+
+                    flag_col = out_col
+                    c = ws_out.cell(1, flag_col)
+                    c.value = "DL Flag"
+                    c.fill = fill("595959")
+                    c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
+                    c.alignment = center()
+                    out_col += 1
+
+                    hist_col = out_col
+                    c = ws_out.cell(1, hist_col)
+                    c.value = "History"
+                    c.fill = fill("595959")
+                    c.font = Font(bold=True, color=WHITE, name="Arial", size=8)
+                    c.alignment = center()
+
+                    for c in range(1, out_col + 1):
+                        ws_out.column_dimensions[get_column_letter(c)].width = 12 if c in [t0_lr_col, flag_col, hist_col] else 18
+
+                    out_row = 2
+                    for r in range(2, ws_optics.max_row + 1):
+                        host = str(ws_optics.cell(r, host_col).value or '').strip()
+                        iface = str(ws_optics.cell(r, iface_col).value or '').strip()
+                        if not host or not iface: continue
+
+                        t0_lbl, t1_lbl, is_p = get_labels(host, iface, phys_t0, phys_t1)
+                        is_dl = (host, iface) in downlink_set
+
+                        row_bg = "C8C8C8" if is_dl else ("FFFFFF" if is_p else LOG_BG)
+                        lr_bg = "A8A8A8" if is_dl else (LR_BG if is_p else LR_LOG)
+                        txt_fg = "888888" if is_dl else "000000"
+
+                        for sc, oc in col_map.items():
+                            c = ws_out.cell(out_row, oc)
+                            c.value = ws_optics.cell(r, sc).value
+                            c.fill = fill(row_bg)
+                            c.font = font(sz=8, color=txt_fg)
+                            c.alignment = vcenter()
+
+                        c = ws_out.cell(out_row, t0_lr_col)
+                        c.value = t0_lbl
+                        c.fill = fill(lr_bg)
+                        c.font = font(sz=8, bold=True, color=txt_fg)
+                        c.alignment = center()
+
+                        cf = ws_out.cell(out_row, flag_col)
+                        if is_dl:
+                            cf.value = "⬇️ Also Downlink — skip"
+                            cf.fill = fill("C8C8C8")
+                            cf.font = Font(bold=True, color="666666", name="Arial", size=8)
+                        else:
+                            cf.fill = fill(row_bg)
+                            cf.font = font(sz=8)
+                        cf.alignment = center()
+
+                        hist_text, _ = get_history_flag(host, iface, 'optic', prev_miss, prev_down, prev_opt)
+                        ch = ws_out.cell(out_row, hist_col)
+                        if hist_text:
+                            ch.value = hist_text
+                            ch.fill = fill("FF6B6B" if "🔁" in hist_text else "FFB347")
+                            ch.font = Font(bold=True, color="FFFFFF", name="Arial", size=8)
+                        else:
+                            ch.fill = fill(row_bg)
+                            ch.font = font(sz=8)
+                        ch.alignment = center()
+
+                        ws_out.row_dimensions[out_row].height = 15
+                        out_row += 1
+
+                    ws_out.freeze_panes = "A2"
 
             if ws_fec:
                 pass
