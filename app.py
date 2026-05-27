@@ -2,94 +2,142 @@ import streamlit as st
 from pathlib import Path
 
 st.set_page_config(
-    page_title="LV Portal Tools",
+    page_title="LV Portal Validation Suite",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── Custom Header with Logo ─────────────────────────────────────────────────
-col_logo, col_title = st.columns([1, 6])
+# ── Header ───────────────────────────────────────────────────────────────────
+col_logo, col_title = st.columns([0.8, 6])
 
 with col_logo:
-    logo_path = Path(__file__).parent / "assets" / "logo.png"
+    logo_path = Path(__file__).parent / "assets" / "LOGO.png"
     if logo_path.exists():
-        st.image(str(logo_path), width=90)
+        st.image(str(logo_path), width=155)
     else:
-        st.markdown("### 🔧")
+        st.markdown("<div style='font-size:42px; margin-top:-8px;'>🔧</div>", unsafe_allow_html=True)
 
 with col_title:
     st.markdown("""
-    <h1 style='margin-bottom: 0; color: #1F4E79;'>LV Portal Validation Suite</h1>
-    <p style='margin-top: 4px; color: #555; font-size: 1.05rem;'>
+    <h1 style='margin:0; padding:0; color:#1E3A5F; font-size:2.1rem; font-weight:700;'>
+        LV Portal Validation Suite
+    </h1>
+    <p style='margin:4px 0 0 0; color:#5A6A7A; font-size:1.05rem;'>
         Unified tools for processing LV Portal and Slack validation reports
     </p>
     """, unsafe_allow_html=True)
 
 st.divider()
 
-# ── Welcome Section ─────────────────────────────────────────────────────────
+# ── Welcome ──────────────────────────────────────────────────────────────────
 st.markdown("""
-### Welcome 👋
+<div style="max-width:820px;">
+<h3 style="margin-bottom:8px;">Welcome 👋</h3>
+<p style="color:#4A5568; font-size:1.02rem; line-height:1.55;">
+One stop shop.
+</p>
+<p style="color:#4A5568; font-size:1.02rem;">
+Select a tool from the <b>sidebar</b> to get started.
+</p>
+</div>
+""", unsafe_allow_html=True)
 
-This internal toolkit helps network engineers quickly process and analyse validation reports from the LV Portal and Slack reporting systems.
+st.markdown("<br>", unsafe_allow_html=True)
 
-Select a tool from the **sidebar** to get started.
-""")
+# ── Tool Cards ───────────────────────────────────────────────────────────────
+st.markdown("### Available Tools")
 
-st.divider()
-
-# ── Tool Cards ──────────────────────────────────────────────────────────────
 col1, col2, col3 = st.columns(3, gap="large")
+
+card_style = """
+<style>
+.card {
+    background: white;
+    border-radius: 14px;
+    padding: 24px 22px;
+    border: 1px solid #E8ECF0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    height: 100%;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+}
+.card h3 {
+    margin: 0 0 12px 0;
+    font-size: 1.15rem;
+    color: #1E3A5F;
+}
+.card p {
+    color: #5A6A7A;
+    font-size: 0.95rem;
+    margin: 0 0 14px 0;
+}
+.card ul {
+    padding-left: 18px;
+    margin: 0;
+    color: #4A5568;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+.card li {
+    margin-bottom: 4px;
+}
+</style>
+"""
+
+st.markdown(card_style, unsafe_allow_html=True)
 
 with col1:
     st.markdown("""
-    <div style="background-color:#F8FAFC; padding:20px; border-radius:12px; border: 1px solid #E2E8F0; height: 220px;">
-        <h3 style="color:#1F4E79; margin-top:0;">🖥️ Compute Link Validator</h3>
-        <p><b>Best for:</b> GPU / Compute to T0 link validation</p>
-        <ul style="font-size:0.92rem; margin-bottom:0;">
+    <div class="card">
+        <h3>🖥️ T0 to Host</h3>
+        <p><b>Best for:</b> GPU / Compute to T0 validation</p>
+        <ul>
             <li>Ghost host detection</li>
-            <li>Compute Optics + FEC</li>
-            <li>Summary dashboard</li>
+            <li>Compute Optics + FEC tabs</li>
+            <li>Summary dashboard with per-rack view</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
     st.markdown("""
-    <div style="background-color:#F8FAFC; padding:20px; border-radius:12px; border: 1px solid #E2E8F0; height: 220px;">
-        <h3 style="color:#1F4E79; margin-top:0;">🔗 QFAB / T1→T0 Validator</h3>
+    <div class="card">
+        <h3>🔗  T1→T0 LVV</h3>
         <p><b>Best for:</b> Newer LV Portal T1-T0 exports</p>
-        <ul style="font-size:0.92rem; margin-bottom:0;">
+        <ul>
             <li>Per-channel Optics analysis</li>
             <li>DG19-style formatting</li>
-            <li>Strong cutsheet fallback</li>
+            <li>Strong cutsheet fallback logic</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
     st.markdown("""
-    <div style="background-color:#F8FAFC; padding:20px; border-radius:12px; border: 1px solid #E2E8F0; height: 220px;">
-        <h3 style="color:#1F4E79; margin-top:0;">📊 Slack Report Highlighter</h3>
+    <div class="card">
+        <h3>📊 T1 to T0 Slack</h3>
         <p><b>Best for:</b> Classic Slack validation reports</p>
-        <ul style="font-size:0.92rem; margin-bottom:0;">
-            <li>Full LLDP + Mismatch analysis</li>
+        <ul>
+            <li>Full LLDP + Mismatch processing</li>
             <li>Recurring issue detection</li>
             <li>History flags across reports</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
 
-st.divider()
+st.markdown("<br><br>", unsafe_allow_html=True)
 
-# ── Tips ────────────────────────────────────────────────────────────────────
+# ── Tips ─────────────────────────────────────────────────────────────────────
 with st.expander("💡 Quick Tips"):
     st.markdown("""
-    - All tools support **multiple cutsheets** (very useful for mismatch resolution)
-    - You can upload a **previous formatted report** in most tools to highlight recurring issues
-    - Output files are downloaded directly — nothing is stored on the server
-    - For best results, use the **latest cutsheet** available for the hall/site
+    - All tools support **multiple cutsheets** (highly recommended for accurate mismatch resolution)
+    - Upload a **previous formatted report** to enable recurring / history flags
+    - Output files are downloaded directly to your machine — nothing is stored on the server
+    - For best results, always use the most recent cutsheet available for the site/hall
     """)
 
 st.caption("Internal tool • Network Validation Team")
