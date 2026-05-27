@@ -12,7 +12,7 @@ import os
 from collections import defaultdict
 
 st.set_page_config(page_title="SYD20 CFAB Validation Formatter", page_icon="🗄️", layout="wide")
-st.title("Rack Validation Formatter")
+st.title("SYD20 CFAB Validation Formatter")
 st.caption("CFAB)")
 
 # ---------------------------------------------------------------------------
