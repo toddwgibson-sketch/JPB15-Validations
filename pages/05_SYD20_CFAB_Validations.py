@@ -13,7 +13,7 @@ from collections import defaultdict
 
 st.set_page_config(page_title="Rack Validation Formatter", page_icon="🗄️", layout="wide")
 st.title("Rack Validation Formatter")
-st.caption("CFAB cutsheet enrichment + long/short path splitting + professional formatting (full fidelity conversion)")
+st.caption("CFAB)")
 
 # ---------------------------------------------------------------------------
 # Style constants (from original)
@@ -632,4 +632,4 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
             st.error(f"Error during processing: {str(e)}")
             st.exception(e)
 
-st.caption("Full fidelity conversion from Tkinter • All original logic and formatting preserved")
+st.caption("")
