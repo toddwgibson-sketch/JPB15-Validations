@@ -489,4 +489,4 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
             st.error(f"Error: {str(e)}")
             st.exception(e)
 
-st.caption("can take some time...")
+st.caption("")
