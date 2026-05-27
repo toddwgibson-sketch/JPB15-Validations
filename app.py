@@ -12,7 +12,7 @@ st.set_page_config(
 col_logo, col_title = st.columns([0.8, 6])
 
 with col_logo:
-    logo_path = Path(__file__).parent / "assets" / "LOGO.png"
+    logo_path = Path(__file__).parent / "assets" / "LOGO.jpg"
     if logo_path.exists():
         st.image(str(logo_path), width=155)
     else:
