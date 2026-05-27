@@ -39,7 +39,7 @@ def show_header(title: str, subtitle: str = ""):
 # ── Usage ─────────────────────────────────────────────────────────────
 show_header(
     title="TEST",
-    subtitle="can make it pretty later"
+    subtitle="test"
 )
 
 # ── Welcome ──────────────────────────────────────────────────────────────────
@@ -65,4 +65,4 @@ with st.expander("FYI"):
     - Output files are downloaded directly to your machine — nothing is stored on the server
     """)
 
-st.caption("Internal tool • Network Validation Team")
+st.caption("Internal tool • Quadconnect")
