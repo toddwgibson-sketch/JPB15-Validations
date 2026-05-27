@@ -34,7 +34,7 @@ st.divider()
 st.markdown("""
 <div style="max-width:820px;">
 <p style="color:#4A5568; font-size:1.02rem; line-height:1.55;">
-One stop shop.
+abc
 </p>
 <p style="color:#4A5568; font-size:1.02rem;">
 Select a tool from the <b>sidebar</b> to get started.
@@ -93,11 +93,11 @@ with col1:
     st.markdown("""
     <div class="card">
         <h3>🖥️ T0 to Host</h3>
-        <p><b>Best for:</b> GPU / Compute to T0 validation</p>
+        <p><b>Best for:</b>card template/p>
         <ul>
-            <li>Ghost host detection</li>
-            <li>Compute Optics + FEC tabs</li>
-            <li>Summary dashboard with per-rack view</li>
+            <li>a</li>
+            <li>b</li>
+            <li>b</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -105,12 +105,12 @@ with col1:
 with col2:
     st.markdown("""
     <div class="card">
-        <h3>🔗  T1→T0 LVV</h3>
-        <p><b>Best for:</b> Newer LV Portal T1-T0 exports</p>
+         <h3>🖥️ T1 LVV</h3>
+        <p><b>Best for:</b>card template/p>
         <ul>
-            <li>Per-channel Optics analysis</li>
-            <li>DG19-style formatting</li>
-            <li>Strong cutsheet fallback logic</li>
+            <li>a</li>
+            <li>b</li>
+            <li>b</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -118,12 +118,12 @@ with col2:
 with col3:
     st.markdown("""
     <div class="card">
-        <h3>📊 T1 to T0 Slack</h3>
-        <p><b>Best for:</b> Classic Slack validation reports</p>
+        <h3>📊 T1 Slack</h3>
+         <p><b>Best for:</b>card template/p>
         <ul>
-            <li>Full LLDP + Mismatch processing</li>
-            <li>Recurring issue detection</li>
-            <li>History flags across reports</li>
+            <li>a</li>
+            <li>b</li>
+            <li>b</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -131,12 +131,9 @@ with col3:
 st.markdown("<br><br>", unsafe_allow_html=True)
 
 # ── Tips ─────────────────────────────────────────────────────────────────────
-with st.expander("💡 Quick Tips"):
+with st.expander("FYI"):
     st.markdown("""
-    - All tools support **multiple cutsheets** (highly recommended for accurate mismatch resolution)
-    - Upload a **previous formatted report** to enable recurring / history flags
     - Output files are downloaded directly to your machine — nothing is stored on the server
-    - For best results, always use the most recent cutsheet available for the site/hall
     """)
 
 st.caption("Internal tool • Network Validation Team")
