@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 st.set_page_config(page_title="SYD20 QFAB", page_icon="📊", layout="wide")
-st.title("SY20 QFAB + Slack Combiner")
+st.title("SY20 QFAB")
 st.caption("Combine multiple per-building audit files into one enriched workbook (full fidelity conversion)")
 
 # ─────────────────────────────────────────────────────────────────── Styles ──
