@@ -11,9 +11,9 @@ import tempfile
 import os
 from collections import defaultdict
 
-st.set_page_config(page_title="SYD20 CFAB Validation Formatter", page_icon="🗄️", layout="wide")
-st.title("SYD20 CFAB Validation Formatter")
-st.caption("CFAB)")
+st.set_page_config(page_title="Rack Validation Formatter", page_icon="🗄️", layout="wide")
+st.title("Rack Validation Formatter")
+st.caption("CFAB cutsheet enrichment + long/short path splitting + professional formatting (full fidelity conversion)")
 
 # ---------------------------------------------------------------------------
 # Style constants (from original)
@@ -358,7 +358,6 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
         hdrs = [c.value for c in ws[1]]
         bname_col = hdrs.index("Device B Name") + 1
         bport_col = hdrs.index("Device B Port") + 1
-        slots = len(b_headers)
 
         for r in range(2, ws.max_row + 1):
             name = ws.cell(row=r, column=bname_col).value
@@ -554,10 +553,10 @@ def process_file_to_bytes(input_bytes, lookup, device_rack_lookup):
         tmp_in_path = tmp_in.name
 
     try:
-     rack = "output"
-    if "LLDP Mismatch + Link Down" 
-    in wb.sheetnames:
-    rack = rack_number_from(wb["LLDP Mismatch + Link Down"])
+        wb = openpyxl.load_workbook(tmp_in_path)
+        rack = "output"
+        if "LLDP Mismatch + Link Down" in wb.sheetnames:
+            rack = rack_number_from(wb["LLDP Mismatch + Link Down"])
 
         split_lldp_sheet(wb)
         clean_columns(wb)
@@ -634,4 +633,4 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
             st.error(f"Error during processing: {str(e)}")
             st.exception(e)
 
-st.caption("")
+st.caption("Full fidelity conversion from Tkinter • All original logic and formatting preserved")
