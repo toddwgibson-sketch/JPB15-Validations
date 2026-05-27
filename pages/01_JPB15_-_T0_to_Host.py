@@ -40,10 +40,6 @@ from openpyxl.utils import get_column_letter
 def show_header(title: str, subtitle: str = ""):
     col1, col2 = st.columns([1, 8])
     with col1:
-        logo_path = Path(__file__).parent.parent / "assets" / "LOGO.png"
-        if logo_path.exists():
-            st.image(str(logo_path), width=0)
-        else:
             st.markdown("")
     with col2:
         st.markdown(f"### {title}")
