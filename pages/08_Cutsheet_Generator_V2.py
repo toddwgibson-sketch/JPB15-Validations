@@ -277,7 +277,7 @@ def assign_connections_to_rooms(df, row_to_room):
     return {room: sorted(idxs) for room, idxs in room_idx.items()}
 
 # ── Main workbook builder (kept from original) ────────────────────────────────
-def build_workbook_to_bytes(df, title_label=""):
+def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
     """
     Builds the cutsheet workbook.
 
@@ -323,7 +323,11 @@ def build_workbook_to_bytes(df, title_label=""):
         ct_tab_names[ct] = n
 
     output = io.BytesIO()
-    wb = xlsxwriter.Workbook(output, {'strings_to_numbers': False})
+    # constant_memory=True is critical for large files to avoid running out of memory
+    wb = xlsxwriter.Workbook(output, {
+        'strings_to_numbers': False,
+        'constant_memory': True
+    })
 
     def mk(bg=None, fc=BLACK, bold=False, wrap=False,
            halign='left', valign='vcenter', sz=10, num_fmt=None):
@@ -445,34 +449,40 @@ def build_workbook_to_bytes(df, title_label=""):
                 f['col'])
             cur += 1
 
-    # PROGRESS Dashboard (simplified but functional)
-    ws_pd = wb.add_worksheet('PROGRESS Dashboard')
-    ws_pd.set_default_row(ROW_H)
-    ws_pd.set_column('A:A', 10)
-    ws_pd.set_column('B:B', 40)
-    ws_pd.set_column('C:C', 22)
-    ws_pd.merge_range('A1:H1', 'Cutsheet Progress', hdr_red)
-    ws_pd.set_row(0, 20)
-    for c, h in enumerate(['Tab #', 'Activity', 'Completion Percentage', 'Notes',
-                           '', 'Material Missing / Blocker', 'Current ETA', 'Days Needed']):
-        ws_pd.write(1, c, h, hdr_red)
+    # PROGRESS Dashboard
+    if skip_heavy_progress:
+        # Lightweight version
+        ws_pd = wb.add_worksheet('PROGRESS Dashboard')
+        ws_pd.set_default_row(ROW_H)
+        ws_pd.write(0, 0, "Lite mode - progress tracking disabled for speed", hdr_red)
+    else:
+        ws_pd = wb.add_worksheet('PROGRESS Dashboard')
+        ws_pd.set_default_row(ROW_H)
+        ws_pd.set_column('A:A', 10)
+        ws_pd.set_column('B:B', 40)
+        ws_pd.set_column('C:C', 22)
+        ws_pd.merge_range('A1:H1', 'Cutsheet Progress', hdr_red)
+        ws_pd.set_row(0, 20)
+        for c, h in enumerate(['Tab #', 'Activity', 'Completion Percentage', 'Notes',
+                               '', 'Material Missing / Blocker', 'Current ETA', 'Days Needed']):
+            ws_pd.write(1, c, h, hdr_red)
 
-    entries = [(1, 'Racks', "=Racks!N1"), (2, 'Cable Liner', "='Cable Liner'!E2")]
-    for i, ct in enumerate(cable_types, 3):
-        sn = ct_tab_names.get(ct, make_tab_name(ct, set()))
-        entries.append((i, sn, f"='{sn}'!N1"))
+        entries = [(1, 'Racks', "=Racks!N1"), (2, 'Cable Liner', "='Cable Liner'!E2")]
+        for i, ct in enumerate(cable_types, 3):
+            sn = ct_tab_names.get(ct, make_tab_name(ct, set()))
+            entries.append((i, sn, f"='{sn}'!N1"))
 
-    for ri, (num, activity, formula) in enumerate(entries, 2):
-        ws_pd.write_number(ri, 0, num, dat_c)
-        ws_pd.write_string(ri, 1, activity, dat_l)
-        ws_pd.write_formula(ri, 2, formula, dat_pct, 0)
-        for c in range(3, 8): ws_pd.write_blank(ri, c, None, blank_bdr)
+        for ri, (num, activity, formula) in enumerate(entries, 2):
+            ws_pd.write_number(ri, 0, num, dat_c)
+            ws_pd.write_string(ri, 1, activity, dat_l)
+            ws_pd.write_formula(ri, 2, formula, dat_pct, 0)
+            for c in range(3, 8): ws_pd.write_blank(ri, c, None, blank_bdr)
 
-    overall_r = 2 + len(entries)
-    ws_pd.write_blank(overall_r, 0, None, blank_bdr)
-    ws_pd.write_string(overall_r, 1, 'Overall Project Progress', grn_bold)
-    ws_pd.write_formula(overall_r, 2, f'=AVERAGE(C3:C{overall_r})', dat_pct, 0)
-    for c in range(3, 8): ws_pd.write_blank(overall_r, c, None, blank_bdr)
+        overall_r = 2 + len(entries)
+        ws_pd.write_blank(overall_r, 0, None, blank_bdr)
+        ws_pd.write_string(overall_r, 1, 'Overall Project Progress', grn_bold)
+        ws_pd.write_formula(overall_r, 2, f'=AVERAGE(C3:C{overall_r})', dat_pct, 0)
+        for c in range(3, 8): ws_pd.write_blank(overall_r, c, None, blank_bdr)
 
     # Racks tab (simplified)
     ws_r = wb.add_worksheet('Racks')
@@ -511,40 +521,45 @@ def build_workbook_to_bytes(df, title_label=""):
         ws_cl.write(r, 1, block, dat_c)
         ws_cl.write_number(r, 2, 0, dat_c)
 
-    # Template
-    ws_t = wb.add_worksheet('Template')
-    ws_t.set_column('A:A', 30)
-    ws_t.set_column('B:B', 12)
-    ws_t.set_column('C:C', 40)
-    ws_t.set_column('D:D', 20)
-    ws_t.set_column('E:E', 40)
-    ws_t.set_column('F:F', 20)
-    ws_t.set_column('G:G', 15)
-    for c in range(7, 12): ws_t.set_column(c, c, 10)
-    ws_t.set_column('M:M', 22)
-    ws_t.set_column('N:N', 12)
-    ws_t.set_column('O:O', 30)
-    ws_t.freeze_panes(1, 0)
-    ws_t.autofilter(0, 0, 0, 14)
-    TEMPLATE_ROWS = 256
-    for ci, (h, hf) in enumerate(tpl_hdrs):
-        if ci == 13:
-            ws_t.write_formula(0, ci, f'=AVERAGE(H2:L{TEMPLATE_ROWS+1})', hdr_plain, 0)
-        else:
-            ws_t.write(0, ci, h, hf)
-    for r in range(1, TEMPLATE_ROWS + 1):
-        er = r + 1
-        ws_t.set_row(r, ROW_H)
-        ws_t.write_formula(r, 0,
-            f'=CONCATENATE(C{er},CHAR(10),D{er},CHAR(10),E{er},CHAR(10),F{er})',
-            hdr_blue, '')
-        ws_t.write(r, 1, 'A', dat_c)
-        for c in range(2, 6): ws_t.write_blank(r, c, None, dat_c)
-        ws_t.write_number(r, 6, 1, dat_c)
-        for c in range(7, 12): ws_t.write_number(r, c, 0, dat_c)
-        ws_t.write_blank(r, 12, None, dat_c)
-        ws_t.write_blank(r, 13, None, dat_c)
-        ws_t.write(r, 14, '', yel_c)
+    # Template (heavy sheet)
+    if not skip_heavy_progress:
+        ws_t = wb.add_worksheet('Template')
+        ws_t.set_column('A:A', 30)
+        ws_t.set_column('B:B', 12)
+        ws_t.set_column('C:C', 40)
+        ws_t.set_column('D:D', 20)
+        ws_t.set_column('E:E', 40)
+        ws_t.set_column('F:F', 20)
+        ws_t.set_column('G:G', 15)
+        for c in range(7, 12): ws_t.set_column(c, c, 10)
+        ws_t.set_column('M:M', 22)
+        ws_t.set_column('N:N', 12)
+        ws_t.set_column('O:O', 30)
+        ws_t.freeze_panes(1, 0)
+        ws_t.autofilter(0, 0, 0, 14)
+
+        # Make the master Template sheet size dynamic
+        total_rows = len(df)
+        TEMPLATE_ROWS = min(max(100, total_rows), 500)
+
+        for ci, (h, hf) in enumerate(tpl_hdrs):
+            if ci == 13:
+                ws_t.write_formula(0, ci, f'=AVERAGE(H2:L{TEMPLATE_ROWS+1})', hdr_plain, 0)
+            else:
+                ws_t.write(0, ci, h, hf)
+        for r in range(1, TEMPLATE_ROWS + 1):
+            er = r + 1
+            ws_t.set_row(r, ROW_H)
+            ws_t.write_formula(r, 0,
+                f'=CONCATENATE(C{er},CHAR(10),D{er},CHAR(10),E{er},CHAR(10),F{er})',
+                hdr_blue, '')
+            ws_t.write(r, 1, 'A', dat_c)
+            for c in range(2, 6): ws_t.write_blank(r, c, None, dat_c)
+            ws_t.write_number(r, 6, 1, dat_c)
+            for c in range(7, 12): ws_t.write_number(r, c, 0, dat_c)
+            ws_t.write_blank(r, 12, None, dat_c)
+            ws_t.write_blank(r, 13, None, dat_c)
+            ws_t.write(r, 14, '', yel_c)
 
     # Cable-type tabs
     used = set(wb.sheetnames)
@@ -635,6 +650,13 @@ with st.form("options_form"):
         help="Uses older heuristic based on column names containing 'status', 'installed', etc."
     )
 
+    st.markdown("#### Performance Options (for speed)")
+    skip_heavy_progress = st.checkbox(
+        "Skip heavy progress sheets (much faster)",
+        value=True,
+        help="Skips the big 'Template' sheet and some progress tracking. Recommended for large files."
+    )
+
     submitted = st.form_submit_button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file)
 
 if submitted:
@@ -661,6 +683,7 @@ if submitted:
                 'classify_internals': classify_internals,
                 'auxiliary_racks': aux_racks,
                 'exclude_already_connected': exclude_done,
+                'skip_heavy_progress': skip_heavy_progress,
             }
 
             # === Filtering ===
@@ -678,10 +701,16 @@ if submitted:
 
             df_all = df_filtered.sort_values('Cable Info').reset_index(drop=True)
 
+            # Give the user visible progress so it doesn't feel stuck
+            if filters.get('skip_heavy_progress'):
+                st.write("Generating lite version (skipping heavy progress sheets)...")
+            else:
+                st.write("Generating full cutsheet with progress tracking... (this can take a while on large files)")
+
             df_all = df_all.sort_values('Cable Info').reset_index(drop=True)
 
             if mode == "Single cutsheet":
-                bytes_data = build_workbook_to_bytes(df_all)
+                bytes_data = build_workbook_to_bytes(df_all, skip_heavy_progress=filters.get('skip_heavy_progress', False))
                 if bytes_data:
                     st.download_button(
                         "📥 Download Formatted Cutsheet",
@@ -714,7 +743,7 @@ if submitted:
                             idxs = room_assignments[room]
                             df_room = df_all.iloc[idxs].copy()
                             # Re-apply any additional per-room logic here if needed in future
-                            xlsx_bytes = build_workbook_to_bytes(df_room, room)
+                            xlsx_bytes = build_workbook_to_bytes(df_room, room, skip_heavy_progress=filters.get('skip_heavy_progress', False))
                             if xlsx_bytes:
                                 zipf.writestr(f"{room}_cutsheet.xlsx", xlsx_bytes)
 
