@@ -674,19 +674,6 @@ if submitted:
                     st.dataframe(removed_sample, use_container_width=True)
                     st.caption(f"Showing up to 10 examples of affected rows (out of {len(df_all) - len(df_filtered)} total affected)")
 
-            # Cable type filter
-            all_cable_types = sorted(df_filtered['Cable Info'].dropna().unique().tolist())
-            selected_cable_types = st.multiselect(
-                "Further filter by these cable types (optional)",
-                options=all_cable_types,
-                default=[]
-            )
-
-            if selected_cable_types:
-                before = len(df_filtered)
-                df_filtered = df_filtered[df_filtered['Cable Info'].isin(selected_cable_types)]
-                st.info(f"Cable type filter applied: {before} → {len(df_filtered)} connections")
-
             st.info(f"**Final connections** that will go into the generated cutsheet(s): **{len(df_filtered):,}**")
 
             df_all = df_filtered.sort_values('Cable Info').reset_index(drop=True)
