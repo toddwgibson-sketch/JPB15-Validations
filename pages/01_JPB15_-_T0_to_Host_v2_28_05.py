@@ -2,10 +2,18 @@
 """
 LV Portal Formatter - Streamlit Version (JBP15 T0→Host)
 
-This is a thin Streamlit wrapper around the original logic in:
-lv_portal_formatter_HOPS_NEW_28_05 (1).py
+Clean Streamlit wrapper around the core logic.
 
-It replaces the Tkinter file pickers and main() with a clean web UI.
+INSTRUCTIONS:
+1. Rename the original file from:
+      lv_portal_formatter_HOPS_NEW_28_05 (1).py
+   to:
+      lv_portal_logic.py
+
+2. Place both files in the same folder.
+
+3. Run with:
+      streamlit run lv_portal_formatter_streamlit.py
 """
 
 import streamlit as st
@@ -13,39 +21,42 @@ import sys
 from pathlib import Path
 import tempfile
 import os
-import io
 
-# Add the original script's directory so we can import its logic functions
-ORIGINAL_DIR = Path(__file__).parent
-sys.path.insert(0, str(ORIGINAL_DIR))
-
+# =============================================================================
+# Import the core logic module
+# (Make sure you renamed the original file to lv_portal_logic.py)
+# =============================================================================
 try:
-    # We import the original module (it may have Tkinter at top level, but we only use its pure functions)
-    import lv_portal_formatter_HOPS_NEW_28_05__1_ as original_logic
-except Exception as e:
-    st.error(f"Failed to import the original logic module: {e}")
+    import lv_portal_logic as lv_logic
+except ImportError as e:
+    st.error(
+        "Could not import the logic module.\n\n"
+        "Please make sure you renamed the original file to:\n"
+        "   lv_portal_logic.py\n\n"
+        f"Original error: {e}"
+    )
     st.stop()
 
 st.set_page_config(page_title="LV Portal Formatter (JBP15)", page_icon="🔌", layout="wide")
 st.title("LV Portal Validation Formatter — JBP15 T0→Host")
-st.caption("Streamlit version • Same logic and output format as the original desktop tool")
+st.caption("Streamlit version • Reuses the original logic from lv_portal_logic.py")
 
 with st.sidebar:
-    st.header("How to use")
+    st.header("Instructions")
     st.markdown("""
-    1. Upload one or more **GPU/Compute Cutsheets** (the special ones with OHR/FDF/NIC data).
-    2. Upload the main **LV Portal Validation Export**.
-    3. (Optional) Upload a previous formatted report for the History column.
+    1. Upload one or more **GPU/Compute Cutsheets**.
+    2. Upload the **LV Portal Validation Export**.
+    3. (Optional) Upload a previous report for history comparison.
     4. Click **Process**.
     """)
-    st.info("Only T0/T1 compute links are processed (pure t0-host compute rows are filtered).")
+    st.info("Only processes T0/T1 compute links (filters pure t0-host compute rows).")
 
 # =============================================================================
 # File Uploads
 # =============================================================================
 st.subheader("1. GPU / Compute Cutsheets")
 gpu_files = st.file_uploader(
-    "Upload one or more GPU/Compute cutsheets (Ctrl/Cmd + click for multiple)",
+    "Upload one or more GPU/Compute cutsheets",
     type=["xlsx"],
     accept_multiple_files=True,
     key="gpu_cutsheets"
@@ -60,7 +71,7 @@ portal_file = st.file_uploader(
 
 st.subheader("3. Previous Report (Optional)")
 prev_file = st.file_uploader(
-    "Previous formatted report (for History comparison)",
+    "Previous formatted report (for History)",
     type=["xlsx"],
     key="prev_report"
 )
@@ -69,47 +80,44 @@ prev_file = st.file_uploader(
 # Processing
 # =============================================================================
 if st.button("🚀 Process", type="primary", disabled=not (gpu_files and portal_file)):
-    with st.spinner("Processing... This can take 1-3 minutes on large reports."):
+    with st.spinner("Processing... This can take 1–3 minutes on large reports."):
         try:
-            # Save uploads to temporary files so the original logic can consume them
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Save GPU cutsheets
                 gpu_paths = []
                 for i, f in enumerate(gpu_files):
-                    p = os.path.join(tmpdir, f"gpu_{i}.xlsx")
+                    p = os.path.join(tmpdir, f"gpu_cutsheet_{i}.xlsx")
                     with open(p, "wb") as out:
                         out.write(f.getbuffer())
                     gpu_paths.append(p)
 
                 # Save main report
-                report_path = os.path.join(tmpdir, "report.xlsx")
+                report_path = os.path.join(tmpdir, "lv_portal_report.xlsx")
                 with open(report_path, "wb") as out:
                     out.write(portal_file.getbuffer())
 
                 # Save previous report if provided
                 prev_path = None
                 if prev_file:
-                    prev_path = os.path.join(tmpdir, "prev_report.xlsx")
+                    prev_path = os.path.join(tmpdir, "previous_report.xlsx")
                     with open(prev_path, "wb") as out:
                         out.write(prev_file.getbuffer())
 
-                st.write("Files saved. Running core processing logic...")
+                st.write("Files prepared. Running original processing logic...")
 
                 # ------------------------------------------------------------------
-                # Call into the original logic
-                # We temporarily override the file pickers so the original main()
-                # can run without Tkinter dialogs.
+                # Monkey-patch the original pickers so main() uses our files
                 # ------------------------------------------------------------------
-                original_pick = original_logic.pick_file
-                original_pick_multi = original_logic.pick_multiple_files
+                original_pick = lv_logic.pick_file
+                original_pick_multi = lv_logic.pick_multiple_files
 
-                # Monkey-patch the pickers so the original main() uses our uploaded files
-                def fake_pick_multi(title, *a, **k):
-                    if "GPU" in title or "Compute" in title:
+                def fake_pick_multi(title, *args, **kwargs):
+                    title_lower = title.lower()
+                    if "gpu" in title_lower or "compute" in title_lower:
                         return gpu_paths
                     return []
 
-                def fake_pick(title, *a, **k):
+                def fake_pick(title, *args, **kwargs):
                     title_lower = title.lower()
                     if "lv portal" in title_lower or "validation" in title_lower:
                         return report_path
@@ -117,21 +125,22 @@ if st.button("🚀 Process", type="primary", disabled=not (gpu_files and portal_
                         return prev_path
                     return None
 
-                original_logic.pick_multiple_files = fake_pick_multi
-                original_logic.pick_file = fake_pick
+                lv_logic.pick_multiple_files = fake_pick_multi
+                lv_logic.pick_file = fake_pick
 
-                # Prevent the original main() from calling sys.exit() and killing Streamlit
+                # Prevent the original main() from killing the Streamlit session
                 original_exit = sys.exit
                 sys.exit = lambda *a, **k: None
 
                 try:
-                    original_logic.main()
+                    # Run the original main() — it will write the output file to disk
+                    lv_logic.main()
                 finally:
                     sys.exit = original_exit
-                    original_logic.pick_multiple_files = original_pick_multi
-                    original_logic.pick_file = original_pick
+                    lv_logic.pick_multiple_files = original_pick_multi
+                    lv_logic.pick_file = original_pick
 
-                # Find the output file that was just created
+                # Find the output file that was created
                 base = os.path.splitext(report_path)[0]
                 out_path = base + "_formatted.xlsx"
 
@@ -142,17 +151,17 @@ if st.button("🚀 Process", type="primary", disabled=not (gpu_files and portal_
                     st.success("Processing complete!")
 
                     st.download_button(
-                        label="📥 Download Formatted Report",
+                        label="📥 Download Formatted LV Portal Report",
                         data=result_bytes,
                         file_name=os.path.basename(out_path),
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
                 else:
-                    st.error("Processing finished but no output file was found.")
+                    st.error("Processing finished, but no output file was found.")
 
         except Exception as e:
             st.error("Processing failed")
             st.exception(e)
 
-st.caption("Converted to Streamlit • Core logic unchanged from the original desktop version")
+st.caption("Streamlit wrapper • Core logic unchanged from lv_portal_logic.py")
