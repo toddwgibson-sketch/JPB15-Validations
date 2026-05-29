@@ -612,67 +612,50 @@ breakdown_file = None
 if mode == "Split by room (requires Row Breakdown)":
     breakdown_file = st.file_uploader("Row Breakdown file (.xlsx)", type=["xlsx"])
 
-if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file):
+# ── Filtering options moved OUTSIDE the button using a form (fixes the looping bug) ──
+with st.form("options_form"):
+    st.markdown("#### Filtering & Internal Cable Logic")
+
+    classify_internals = st.checkbox(
+        "Classify intra-rack cables as Internal (recommended)",
+        value=True,
+        help="Cables where RackA and RackB are the same rack will be marked Internal and can get their own tab"
+    )
+
+    aux_racks_input = st.text_input(
+        "Auxiliary rack numbers (comma separated)",
+        value="",
+        help="e.g. 2701,2702,2710 — cables to these racks will NOT be treated as internal even if RackA == RackB"
+    )
+    aux_racks = {r.strip() for r in aux_racks_input.split(",") if r.strip()}
+
+    exclude_done = st.checkbox(
+        "Also try to exclude rows using status/keyword columns (legacy)",
+        value=False,
+        help="Uses older heuristic based on column names containing 'status', 'installed', etc."
+    )
+
+    submitted = st.form_submit_button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file)
+
+if submitted:
     with st.spinner("Processing... This can take a few minutes for large allconnect sheets."):
         try:
             # Read input
             df_all = pd.read_excel(input_file, dtype=str).fillna('')
             st.success(f"Loaded {len(df_all):,} raw connections")
 
-            # Show columns for transparency (very useful right now)
+            # Show columns for transparency
             with st.expander("Input columns detected (for building better filters)"):
                 st.write(list(df_all.columns))
 
-            # === CRITICAL: How tabs are determined from YOUR export file ===
-            # In the export file you upload, there is NO separate sheet or list that says
-            # "these are the tabs to create".
-            #
-            # The _allconnects sheet (in the output) is simply a raw copy of your entire export.
-            #
-            # The individual cable-type tabs (Copper RJ45, various AOC/DAC/Fiber types, etc.)
-            # are created dynamically based on the **unique values in the "Cable Info" column**
-            # of your export file.
-            #
-            # This is the key relationship you asked about.
+            # Show what tabs would be created
             cable_types_preview = sorted(df_all['Cable Info'].dropna().unique().tolist())
             with st.expander(f"📋 Tabs that will be created from this export ({len(cable_types_preview)} cable types)"):
-                st.write("These come **directly** from the unique values in the **`Cable Info`** column of your uploaded export file:")
                 st.dataframe(
                     pd.DataFrame({"Cable Info Value → Will become this tab": cable_types_preview}),
                     use_container_width=True,
                     hide_index=True
                 )
-
-            # ── NEW: Apply preprocessing & filtering logic
-            st.markdown("#### Filtering & Internal Cable Logic")
-
-            classify_internals = st.checkbox(
-                "Classify intra-rack cables as Internal (recommended)",
-                value=True,
-                help="Cables where RackA and RackB are the same rack will be marked Internal and can get their own tab"
-            )
-
-            aux_racks_input = st.text_input(
-                "Auxiliary rack numbers (comma separated)",
-                value="",
-                help="e.g. 2701,2702,2710 — cables to these racks will NOT be treated as internal even if RackA == RackB"
-            )
-            aux_racks = {r.strip() for r in aux_racks_input.split(",") if r.strip()}
-
-            # Legacy / simple exclusion (can be used together or alone)
-            exclude_done = st.checkbox(
-                "Also try to exclude rows using status/keyword columns (legacy)",
-                value=False,
-                help="Uses older heuristic based on column names containing 'status', 'installed', etc."
-            )
-
-            # New feature: Cable type selection
-            all_cable_types = sorted(df_all['Cable Info'].dropna().unique().tolist())
-            selected_cable_types = st.multiselect(
-                "Only include these cable types (leave empty = all)",
-                options=all_cable_types,
-                default=[]
-            )
 
             filters = {
                 'classify_internals': classify_internals,
@@ -683,15 +666,22 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
             # === Filtering ===
             df_filtered = preprocess_and_filter_connections(df_all, filters)
 
-            # Show preview of what was filtered (very useful while building logic)
-            if filters.get('exclude_already_connected') and len(df_filtered) < len(df_all):
-                with st.expander("🔍 Preview: Sample of rows that were filtered out"):
+            # Show preview of what was filtered
+            if len(df_filtered) < len(df_all):
+                with st.expander("🔍 Preview: Sample of rows that were filtered / reclassified"):
                     removed_mask = ~df_all.index.isin(df_filtered.index)
-                    removed_sample = df_all[removed_mask].head(8)
+                    removed_sample = df_all[removed_mask].head(10)
                     st.dataframe(removed_sample, use_container_width=True)
-                    st.caption(f"Showing up to 8 examples of removed rows (out of {len(df_all) - len(df_filtered)} total removed)")
+                    st.caption(f"Showing up to 10 examples of affected rows (out of {len(df_all) - len(df_filtered)} total affected)")
 
-            # Apply additional cable type filter if user selected specific ones
+            # Cable type filter
+            all_cable_types = sorted(df_filtered['Cable Info'].dropna().unique().tolist())
+            selected_cable_types = st.multiselect(
+                "Further filter by these cable types (optional)",
+                options=all_cable_types,
+                default=[]
+            )
+
             if selected_cable_types:
                 before = len(df_filtered)
                 df_filtered = df_filtered[df_filtered['Cable Info'].isin(selected_cable_types)]
