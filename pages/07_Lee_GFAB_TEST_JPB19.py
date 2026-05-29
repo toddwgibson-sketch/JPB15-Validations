@@ -628,44 +628,6 @@ def process_file(input_path, output_path, lr_lookup, cut_df, log):
                 cell.fill   = pink_fill
                 cell.border = bd
 
-        # ── Connection Status (basic mismatch detection) ─────────────────────
-        log("  · Adding Connection Status column (Option B)")
-        mismatch_fill = PatternFill('solid', start_color='FFCCCB')  # light red/pink
-        status_col = ws_m.max_column + 1
-
-        hdr = ws_m.cell(row=1, column=status_col, value="Connection Status")
-        hdr.font = Font(bold=True, name='Arial', size=10)
-        hdr.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
-        hdr.fill  = yellow_fill
-        hdr.border = bd
-        ws_m.column_dimensions[get_column_letter(status_col)].width = 32
-
-        for r_off in range(len(act_rows)):
-            act = act_rows[r_off]
-            actual_h = str(act.get('Z Hostname', '') or '').strip().lower()
-            actual_i = str(act.get('Z Interface', '') or '').strip().lower()
-
-            exp_h = str(possible_data.get('Possible Hostname', [''] * len(act_rows))[r_off] or '').strip().lower()
-            exp_i = str(possible_data.get('Possible Interface', [''] * len(act_rows))[r_off] or '').strip().lower()
-
-            if not actual_h and not actual_i:
-                status = "No Active Connection"
-            elif not exp_h and not exp_i:
-                status = "No Expected Data in Cutsheet"
-            elif actual_h == exp_h and actual_i == exp_i:
-                status = "As Expected"
-            elif actual_h == exp_h:
-                status = "Mismatch - Different Interface"
-            elif actual_i == exp_i:
-                status = "Mismatch - Different Host"
-            else:
-                status = "Mismatch - Different Host + Interface"
-
-            cell = ws_m.cell(row=r_off + 2, column=status_col, value=status)
-            cell.border = bd
-            if "Mismatch" in status:
-                cell.fill = mismatch_fill
-
     # ── 6c. Strip unwanted columns across every tab ─────────────────────────
     if COLUMNS_TO_REMOVE:
         log(f"  · Stripping columns: {', '.join(COLUMNS_TO_REMOVE)}")
