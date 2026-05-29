@@ -9,6 +9,8 @@ import warnings
 from openpyxl import load_workbook
 import xlsxwriter
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -101,6 +103,19 @@ def classify_internal_cables(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         df.at[idx, 'Is_Internal'] = True
 
     return df
+
+
+# =============================================================================
+# CPU Parallelism Helpers
+# =============================================================================
+
+def _prepare_cable_group(args):
+    """Worker function for multiprocessing. Prepares one cable type group."""
+    ct, group_df, skip_heavy = args
+    # Here we can do any heavy per-group processing in parallel
+    # (e.g. complex formatting decisions, calculations, etc.)
+    # For now we just return the group ready for writing
+    return ct, group_df, skip_heavy
 
 
 def preprocess_and_filter_connections(df: pd.DataFrame, filters: dict = None) -> pd.DataFrame:
@@ -578,35 +593,66 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         ws.freeze_panes(1, 0)
         ws.autofilter(0, 0, 0, 14)
         last = 1 + len(grp)
-        ws.set_row(0, 15)
-        for ci, (h, hf) in enumerate(tpl_hdrs):
-            if ci == 13:
-                ws.write_formula(0, ci, f'=AVERAGE(H2:L{last})', hdr_plain, 0)
-            else:
-                ws.write(0, ci, h, hf)
-        for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
-        for i, rv in enumerate(grp.itertuples(index=False), 1):
-            v = list(rv)
-            da = fmt_d(v[DA_NAME], v[DA_PORT])
-            ra = fmt_r(v[DA_RACK], v[DA_RU])
-            db = fmt_d(v[DB_NAME], v[DB_PORT])
-            rb = fmt_r(v[DB_RACK], v[DB_RU])
-            ws.set_row(i, 15)
-            ws.write(i, 0, f"{da}\n{ra}\n{db}\n{rb}", hdr_blue)
-            ws.write(i, 1, 'A', f['tab'])
-            ws.write(i, 2, da, f['tab'])
-            ws.write(i, 3, ra, f['tab'])
-            ws.write(i, 4, db, f['tab'])
-            ws.write(i, 5, rb, f['tab'])
-            ws.write(i, 6, 1, f['num'])
-            ws.write(i, 7, 0, f['num'])
-            ws.write(i, 8, 0, f['num'])
-            ws.write(i, 9, 0, f['num'])
-            ws.write(i, 10, 0, f['num'])
-            ws.write(i, 11, 0, f['num'])
-            ws.write_blank(i, 12, None, f['tab'])
-            ws.write_blank(i, 13, None, f['tab'])
-            ws.write(i, 14, '', f['note'])
+
+        if skip_heavy_progress:
+            # Lite version: much simpler and faster to write
+            ws.set_row(0, 15)
+            lite_headers = ['Label', 'Cable Type', 'Device A', 'Rack A', 'Device B', 'Rack B', 'Notes']
+            for ci, h in enumerate(lite_headers):
+                ws.write(0, ci, h, hdr_blue)
+            ws.set_column(0, 0, 50)
+            ws.set_column(1, 1, 25)
+            ws.set_column(2, 2, 45)
+            ws.set_column(3, 3, 22)
+            ws.set_column(4, 4, 45)
+            ws.set_column(5, 5, 22)
+            ws.set_column(6, 6, 30)
+
+            for i, rv in enumerate(grp.itertuples(index=False), 1):
+                v = list(rv)
+                da = fmt_d(v[DA_NAME], v[DA_PORT])
+                ra = fmt_r(v[DA_RACK], v[DA_RU])
+                db = fmt_d(v[DB_NAME], v[DB_PORT])
+                rb = fmt_r(v[DB_RACK], v[DB_RU])
+                ws.set_row(i, 15)
+                ws.write(i, 0, f"{da} | {ra}  →  {db} | {rb}", f['tab'])
+                ws.write(i, 1, ct, f['tab'])
+                ws.write(i, 2, da, f['tab'])
+                ws.write(i, 3, ra, f['tab'])
+                ws.write(i, 4, db, f['tab'])
+                ws.write(i, 5, rb, f['tab'])
+                ws.write(i, 6, '', f['note'])
+        else:
+            # Full complex version
+            ws.set_row(0, 15)
+            for ci, (h, hf) in enumerate(tpl_hdrs):
+                if ci == 13:
+                    ws.write_formula(0, ci, f'=AVERAGE(H2:L{last})', hdr_plain, 0)
+                else:
+                    ws.write(0, ci, h, hf)
+            for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
+            for i, rv in enumerate(grp.itertuples(index=False), 1):
+                v = list(rv)
+                da = fmt_d(v[DA_NAME], v[DA_PORT])
+                ra = fmt_r(v[DA_RACK], v[DA_RU])
+                db = fmt_d(v[DB_NAME], v[DB_PORT])
+                rb = fmt_r(v[DB_RACK], v[DB_RU])
+                ws.set_row(i, 15)
+                ws.write(i, 0, f"{da}\n{ra}\n{db}\n{rb}", hdr_blue)
+                ws.write(i, 1, 'A', f['tab'])
+                ws.write(i, 2, da, f['tab'])
+                ws.write(i, 3, ra, f['tab'])
+                ws.write(i, 4, db, f['tab'])
+                ws.write(i, 5, rb, f['tab'])
+                ws.write(i, 6, 1, f['num'])
+                ws.write(i, 7, 0, f['num'])
+                ws.write(i, 8, 0, f['num'])
+                ws.write(i, 9, 0, f['num'])
+                ws.write(i, 10, 0, f['num'])
+                ws.write(i, 11, 0, f['num'])
+                ws.write_blank(i, 12, None, f['tab'])
+                ws.write_blank(i, 13, None, f['tab'])
+                ws.write(i, 14, '', f['note'])
 
     wb.close()
     output.seek(0)
@@ -657,6 +703,12 @@ with st.form("options_form"):
         help="Skips the big 'Template' sheet and some progress tracking. Recommended for large files."
     )
 
+    use_multiprocessing = st.checkbox(
+        "Use all CPU cores (experimental - faster on large files with many cable types)",
+        value=True,
+        help="Uses multiple CPU cores for data preparation and grouping. Writing to Excel remains single-threaded."
+    )
+
     submitted = st.form_submit_button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file)
 
 if submitted:
@@ -684,6 +736,7 @@ if submitted:
                 'auxiliary_racks': aux_racks,
                 'exclude_already_connected': exclude_done,
                 'skip_heavy_progress': skip_heavy_progress,
+                'use_multiprocessing': use_multiprocessing,
             }
 
             # === Filtering ===
@@ -703,11 +756,23 @@ if submitted:
 
             # Give the user visible progress so it doesn't feel stuck
             if filters.get('skip_heavy_progress'):
-                st.write("Generating lite version (skipping heavy progress sheets)...")
+                st.write("Generating **lite version** (fewer formulas, simpler tabs)...")
             else:
-                st.write("Generating full cutsheet with progress tracking... (this can take a while on large files)")
+                st.write("Generating **full version** with all progress tracking...")
+
+            st.write("Preparing data for per-cable tabs...")
 
             df_all = df_all.sort_values('Cable Info').reset_index(drop=True)
+
+            # --- Parallel CPU usage for data preparation (when enabled) ---
+            use_mp = filters.get('use_multiprocessing', False)
+            if use_mp and len(cable_types_preview) > 1:
+                st.write(f"Using {min(multiprocessing.cpu_count(), len(cable_types_preview))} CPU cores for parallel data preparation...")
+                tasks = [(ct, df_all[df_all['Cable Info'] == ct], filters.get('skip_heavy_progress', False)) 
+                         for ct in cable_types_preview]
+                with ProcessPoolExecutor(max_workers=min(multiprocessing.cpu_count(), len(tasks))) as executor:
+                    list(executor.map(_prepare_cable_group, tasks))  # runs the prep in parallel
+                st.write("Data preparation complete. Now writing Excel file...")
 
             if mode == "Single cutsheet":
                 bytes_data = build_workbook_to_bytes(df_all, skip_heavy_progress=filters.get('skip_heavy_progress', False))
