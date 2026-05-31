@@ -209,13 +209,17 @@ def swap_mismatch_groups(headers, rows):
 
 
 def dedup_bidirectional(headers, rows):
-    h_i = headers.index("Hostname Interface")
-    eh_i = headers.index("Expected Hostname Exp. Interface")
+    """Remove rows whose Hostname/Interface <-> Expected Hostname/Exp. Interface link
+    already appeared in reverse direction. Merges Source values."""
+    h_i = headers.index("Hostname")
+    i_i = headers.index("Interface")
+    eh_i = headers.index("Expected Hostname")
+    ei_i = headers.index("Exp. Interface")
     src_i = headers.index("Source") if "Source" in headers else None
     seen = {}
     order = []
     for r in rows:
-        key = frozenset([r[h_i], r[eh_i]])
+        key = frozenset([(r[h_i], r[i_i]), (r[eh_i], r[ei_i])])
         if key in seen:
             if src_i is not None:
                 existing = str(seen[key][src_i])
