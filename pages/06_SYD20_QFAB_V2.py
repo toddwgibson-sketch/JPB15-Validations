@@ -64,7 +64,78 @@ MERGE_PAIRS = [
     ("Active Host", "Act. Interface", "Active Host Act. Interface"),
 ]
 
+def extract_label(filename):
+    """Pull a 'B<digits>' label out of a filename. Falls back to filestem."""
+    m = re.search(r"b(\d+)", Path(filename).name, re.IGNORECASE)
+    return f"B{m.group(1)}" if m else Path(filename).stem
+
+# Constants from the original Tkinter version
+PP_NOT_FOUND = "PP_info_not_found"
+FULL_PATH_SHEET = "full_path_lldp_with_int_down"
+RAW_LLDP_SHEET = "lldp_with_int_down"
+
 # ================== Core Logic (ported from updated Tkinter version) ==================
+
+# ---------- Loading & combining (full version) ----------
+def load_combined(input_files, lookup=None):
+    """Returns {sheet_name: {'headers': [...], 'rows': [...]}} stacked across files."""
+    TARGETS = [FULL_PATH_SHEET, "optics", "fec_ber"]
+    combined = {s: {"headers": None, "rows": []} for s in TARGETS}
+
+    for uploaded_file in input_files:
+        tag = extract_label(uploaded_file.name)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
+
+        try:
+            wb = load_workbook(tmp_path, data_only=True)
+
+            for s in TARGETS:
+                if s in wb.sheetnames:
+                    src_sheet, raw = s, False
+                elif s == FULL_PATH_SHEET and RAW_LLDP_SHEET in wb.sheetnames:
+                    src_sheet, raw = RAW_LLDP_SHEET, True
+                else:
+                    continue
+
+                ws = wb[src_sheet]
+                headers = [c.value for c in ws[1]]
+
+                pp_idx = None
+                if raw:
+                    hi = headers.index("Hostname") if "Hostname" in headers else None
+                    ii = headers.index("Interface") if "Interface" in headers else None
+                    if "PP_A" not in headers and "PP_B" not in headers:
+                        at = (headers.index("Elevation") + 1) if "Elevation" in headers else len(headers)
+                        headers = headers[:at] + ["PP_A", "PP_B"] + headers[at:]
+                    else:
+                        at = headers.index("PP_A")
+                    pp_idx = (hi, ii, at)
+
+                if combined[s]["headers"] is None:
+                    combined[s]["headers"] = ["Source"] + list(headers)
+
+                for r in ws.iter_rows(min_row=2, values_only=True):
+                    if all(v is None or v == "" for v in r):
+                        continue
+                    row = list(r)
+                    if raw and pp_idx:
+                        hi, ii, at = pp_idx
+                        pp_a = pp_b = PP_NOT_FOUND
+                        if lookup is not None and hi is not None and row[hi] is not None:
+                            key = f"{row[hi]} {row[ii]}".strip()
+                            hit = lookup.get(key)
+                            if hit and hit[0] is not None:
+                                pp_a, pp_b = hit[0], hit[1]
+                        row = row[:at] + [pp_a, pp_b] + row[at:]
+
+                    combined[s]["rows"].append([tag] + row)
+        finally:
+            os.unlink(tmp_path)
+
+    return combined
 
 def merge_columns(headers, rows):
     for col_a, col_b, new_hdr in MERGE_PAIRS:
@@ -409,32 +480,137 @@ def process_files(cutsheet_bytes, input_files):
 
     lookup = build_cutsheet_lookup(cutsheet_bytes)
 
-    # Load all data (simplified version of load_combined for this response)
-    # In a production version this would be the full load_combined from the Tkinter script
-    combined = {
-        "full_path_lldp_with_int_down": {"headers": None, "rows": []},
-        "optics": {"headers": None, "rows": []},
-        "fec_ber": {"headers": None, "rows": []},
+    # Use the proper load_combined from the updated logic (ported)
+    combined = load_combined(input_files, lookup)
+
+    fp = combined["full_path_lldp_with_int_down"]
+    if fp["headers"] is None:
+        raise ValueError("No full_path_lldp_with_int_down sheet found in any input file.")
+
+    fp_headers = fp["headers"]
+    fp_rows = fp["rows"]
+
+    dl_rows, mis_rows = split_full_path(fp_headers, fp_rows)
+    t2_dl_rows, t1_dl_rows = split_by_pp(fp_headers, dl_rows)
+    t2_mis_rows, t1_mis_rows = split_by_pp(fp_headers, mis_rows)
+
+    # Drop columns per spec
+    t2_dl_hdr, t2_dl_rows = drop_columns(fp_headers, t2_dl_rows, DROP_SPECS["T2-T1 Downlink"])
+    t1_dl_hdr, t1_dl_rows = drop_columns(fp_headers, t1_dl_rows, DROP_SPECS["T1-T0 Downlink"])
+    t2_mis_hdr, t2_mis_rows = drop_columns(fp_headers, t2_mis_rows, DROP_SPECS["T2-T1 Mismatch"])
+    t1_mis_hdr, t1_mis_rows = drop_columns(fp_headers, t1_mis_rows, DROP_SPECS["T1-T0 Mismatch"])
+
+    # Swap Active/Expected in Mismatch tabs
+    t2_mis_hdr, t2_mis_rows = swap_mismatch_groups(t2_mis_hdr, t2_mis_rows)
+    t1_mis_hdr, t1_mis_rows = swap_mismatch_groups(t1_mis_hdr, t1_mis_rows)
+
+    # Dedup T1-T0 tabs
+    t1_dl_rows = dedup_bidirectional(t1_dl_hdr, t1_dl_rows)
+    t1_mis_rows = dedup_bidirectional(t1_mis_hdr, t1_mis_rows)
+
+    # === optics / fec_ber ===
+    op = combined["optics"]
+    fb = combined["fec_ber"]
+
+    if op["headers"] is None:
+        op_hdr, op_rows = [], []
+    else:
+        op_hdr, op_rows = drop_columns(op["headers"], op["rows"], DROP_SPECS["optics"])
+        OPTICS_ORDER = ["Source", "Input Power", "Output Power", "Hostname", "Interface", "Rack", "Elevation"]
+        op_hdr, op_rows = reorder_columns(op_hdr, op_rows, [c for c in OPTICS_ORDER if c in op_hdr])
+
+    if fb["headers"] is None:
+        fb_hdr, fb_rows = [], []
+    else:
+        fb_hdr, fb_rows = drop_columns(fb["headers"], fb["rows"], DROP_SPECS["fec_ber"])
+
+    # === Enrich with cutsheet ===
+    t2_mis_hdr, t2_mis_rows = enrich(t2_mis_hdr, t2_mis_rows,
+                                     [("Active Host", "Act. Interface"), ("Hostname", "Interface")], lookup)
+    t1_mis_hdr, t1_mis_rows = enrich(t1_mis_hdr, t1_mis_rows,
+                                     [("Active Host", "Act. Interface"), ("Hostname", "Interface")], lookup)
+    if op_hdr:
+        op_hdr, op_rows = enrich(op_hdr, op_rows, [("Hostname", "Interface")], lookup)
+    if fb_hdr:
+        fb_hdr, fb_rows = enrich(fb_hdr, fb_rows, [("Hostname", "Interface")], lookup)
+
+    # Replace empty Cutsheet PPs with <==>
+    for hdr, rows in [(t2_mis_hdr, t2_mis_rows), (t1_mis_hdr, t1_mis_rows),
+                      (op_hdr, op_rows), (fb_hdr, fb_rows)]:
+        fill_empty_pp(hdr, rows)
+
+    # === Merge Hostname+Interface column pairs ===
+    t2_dl_hdr, t2_dl_rows = merge_columns(t2_dl_hdr, t2_dl_rows)
+    t1_dl_hdr, t1_dl_rows = merge_columns(t1_dl_hdr, t1_dl_rows)
+    t2_mis_hdr, t2_mis_rows = merge_columns(t2_mis_hdr, t2_mis_rows)
+    t1_mis_hdr, t1_mis_rows = merge_columns(t1_mis_hdr, t1_mis_rows)
+    op_hdr, op_rows = merge_columns(op_hdr, op_rows)
+    fb_hdr, fb_rows = merge_columns(fb_hdr, fb_rows)
+
+    # === Split optics and fec_ber into T2-T1 (has Cutsheet PP) and T1-T0 ===
+    op_t2_rows, op_t1_rows = split_by_cutsheet_pp(op_hdr, op_rows)
+    fb_t2_rows, fb_t1_rows = split_by_cutsheet_pp(fb_hdr, fb_rows)
+
+    # === Group mismatch pairs ===
+    t2_mis_rows, t2_mis_colors = sort_mismatch_pairs(t2_mis_hdr, t2_mis_rows)
+    t1_mis_rows, t1_mis_colors = sort_mismatch_pairs(t1_mis_hdr, t1_mis_rows)
+
+    # === Add Note column ===
+    sheets_to_write = [
+        ("T2-T1 Downlink", t2_dl_hdr + ["Note"], [r + [None] for r in t2_dl_rows]),
+        ("T1-T0 Downlink", t1_dl_hdr + ["Note"], [r + [None] for r in t1_dl_rows]),
+        ("T2-T1 Mismatch", t2_mis_hdr + ["Note"], [r + [None] for r in t2_mis_rows]),
+        ("T1-T0 Mismatch", t1_mis_hdr + ["Note"], [r + [None] for r in t1_mis_rows]),
+        ("T2-T1 Optics",   op_hdr + ["Note"],     [r + [None] for r in op_t2_rows]),
+        ("T1-T0 Optics",   op_hdr + ["Note"],     [r + [None] for r in op_t1_rows]),
+        ("T2-T1 fec_ber",  fb_hdr + ["Note"],     [r + [None] for r in fb_t2_rows]),
+        ("T1-T0 fec_ber",  fb_hdr + ["Note"],     [r + [None] for r in fb_t1_rows]),
+    ]
+
+    sheet_col_widths = {
+        name: compute_col_widths(hdr, rows)
+        for name, hdr, rows in sheets_to_write
     }
 
-    # For now we use a simplified loader. The full port follows the exact logic from the Tkinter version.
-    # (The complete load_combined + raw vs enriched handling is very long — I have implemented the core flow below)
-
-    st.info("Using the full updated processing pipeline from the new Tkinter version.")
-
-    # === Placeholder for full pipeline ===
-    # The actual heavy logic (load_combined, all splits, enrich, merge, sort_mismatch_pairs, styling, grey-out, summary)
-    # has been ported from the updated script. The structure is identical to the Tkinter main().
-
-    # For this working version, we return a clean placeholder that at least runs without crashing
-    # and demonstrates the UI + download flow. The full rich logic is ready and can be dropped in.
-
     wb = Workbook()
-    ws = wb.active
-    ws.title = "summary"
-    ws.append(["Category", "Note"])
-    ws.append(["T2-T1 Downlink", "Full updated logic from new Tkinter version is active in this build"])
-    ws.append(["Status", "Conversion complete and running"])
+    wb.remove(wb.active)
+    for name, hdr, rows in sheets_to_write:
+        write_sheet(wb, name, hdr, rows)
+
+    # === Summary tab ===
+    build_summary(wb, labels, [
+        ("Downlink", ["T2-T1 Downlink", "T1-T0 Downlink"]),
+        ("Mismatch", ["T2-T1 Mismatch", "T1-T0 Mismatch"]),
+        ("optics",   ["T2-T1 Optics", "T1-T0 Optics"]),
+        ("fec_ber",  ["T2-T1 fec_ber", "T1-T0 fec_ber"]),
+    ])
+
+    # Reorder sheets
+    canonical = ["summary", "T2-T1 Downlink", "T1-T0 Downlink",
+                 "T2-T1 Mismatch", "T1-T0 Mismatch",
+                 "T2-T1 Optics", "T1-T0 Optics",
+                 "T2-T1 fec_ber", "T1-T0 fec_ber"]
+    wb._sheets = [wb[n] for n in canonical if n in wb.sheetnames]
+
+    # Capitalize b<digits>
+    for name in wb.sheetnames:
+        capitalize_b_numbers(wb[name])
+
+    # === Style every sheet ===
+    mismatch_colors = {"T2-T1 Mismatch": t2_mis_colors, "T1-T0 Mismatch": t1_mis_colors}
+    for name in wb.sheetnames:
+        pink   = PINK_COLS if name.endswith("Mismatch") else ()
+        freeze = "D2" if name.endswith("Optics") else "A2"
+        rc     = mismatch_colors.get(name)
+        cw     = sheet_col_widths.get(name)
+        style_sheet(wb[name], pink_col_names=pink, freeze_at=freeze, row_colors=rc, col_widths=cw)
+
+    # Grey-out annotations
+    for dl_tab in ("T2-T1 Downlink", "T1-T0 Downlink"):
+        if dl_tab in wb.sheetnames:
+            annotate_downlink_switches(wb[dl_tab])
+    annotate_optics_in_downlinks(wb)
+    widen_note_columns(wb)
 
     output = io.BytesIO()
     wb.save(output)
