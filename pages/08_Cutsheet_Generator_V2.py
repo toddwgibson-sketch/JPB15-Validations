@@ -112,95 +112,213 @@ def classify_internal_cables(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 import re
 
-def make_sort_key(text: str) -> str:
+def make_sort_key(txt: str) -> str:
     """
-    Generates a consistent, zero-padded sort key from device names or PP labels.
-    This is the migrated logic from the user's sortkey development work.
+    Comprehensive SortKey function - direct port of your working VBA logic.
+    Handles OHR, Passive+DISTA, PP:SYD, and the full syd20 family with all qualifiers.
     """
-    if not text or not isinstance(text, str):
-        return ''
-
-    s = text.strip()
-
-    # === Case 1: Patch Panel labels (PP:...) ===
-    if s.upper().startswith('PP:'):
-        parts = s.split('.')
+    if not txt:
+        return ""
+    
+    t = str(txt).strip().upper()
+    res = ""
+    
+    # OHR
+    if "OHR" in t:
         try:
-            site = parts[0].replace('PP:', '').upper()
-            room = f'{int(parts[1]):02d}'
-            dh = parts[2].upper()
-            if dh.startswith('DH') and dh[2:].isdigit():
-                dh = f'DH{int(dh[2:]):02d}'
-
-            rest = '.'.join(parts[3:])
-            tokens = re.split(r'([RUru])', rest)
-            out = []
-            for t in tokens:
-                t = t.strip()
-                if not t: continue
-                if t[0].upper() in 'RU':
-                    letter = t[0].upper()
-                    num = re.search(r'\d+', t)
-                    num = f'{int(num.group()):03d}' if num else '000'
-                    out.append(f'{letter}{num}')
-                else:
-                    m = re.match(r'([A-Za-z]+)(\d+)', t)
-                    if m:
-                        let = m.group(1).upper()
-                        num = f'{int(m.group(2)):03d}'
-                        out.append(f'{let}{num}')
-                    else:
-                        out.append(t.upper())
-            return f'{site}|{room}|{dh}|' + '|'.join(out)
-        except Exception:
-            return s
-
-    # === Case 2: Device / hostname style ===
-    lower = s.lower()
-    if 'syd20' in lower or re.search(r'b\d+', lower):
+            syd_pos = t.find("SYD")
+            dh_pos = t.find("DH")
+            ohr_pos = t.find("OHR")
+            u_pos = t.find(".U")
+            p_pos = t.find(".P")
+            
+            site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}" if syd_pos >= 0 else "SYD"
+            dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}" if dh_pos >= 0 else ""
+            ohr = "OHR" + f"{int(t[ohr_pos+3:ohr_pos+7]):0000}" if ohr_pos >= 0 else ""
+            u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}" if u_pos >= 0 else ""
+            
+            res = f"{site}|{dh}|{ohr}{u}"
+            if p_pos > 0:
+                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+        except:
+            res = t
+    
+    # Passive + DISTA
+    elif "PASSIVE" in t and "DISTA" in t:
         try:
-            b = re.search(r'b(\d+)', lower)
-            t = re.search(r't(\d+)', lower)
-            r = re.search(r'r(\d+)', lower)
-            port = re.search(r'(?:et-|ethernet|port)[-/]?(\d+)', lower, re.I)
-
-            b_str = f'B{int(b.group(1)):02d}' if b else ''
-            t_str = f'T{int(t.group(1)):02d}' if t else 'T00'
-            r_str = f'R{int(r.group(1)):03d}' if r else ''
-            port_num = f'PORT{int(port.group(1)):03d}' if port else ''
-
-            return f'SYD20|{b_str}|{t_str}|{r_str}|{port_num}'.strip('|')
-        except Exception:
-            pass
-
-    return s.upper()[:60]
+            dista_pos = t.find("DISTA")
+            u_pos = t.find(".U")
+            p_pos = t.find(".P")
+            res = f"Passive|DISTA{int(t[dista_pos+6:dista_pos+10]):0000}"
+            if u_pos > 0:
+                res += f"|U{int(t[u_pos+2:u_pos+5]):000}"
+            if p_pos > 0:
+                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+        except:
+            res = t
+    
+    # Regular PP:SYD R... (with B1, S7, A, P, etc.)
+    elif "PP:SYD" in t and ".R" in t:
+        try:
+            syd_pos = t.find("SYD")
+            dh_pos = t.find("DH")
+            r_pos = t.find(".R")
+            u_pos = t.find(".U")
+            s_pos = t.find(".S")
+            a_pos = t.find(".A")
+            b_pos = t.find(".B")
+            p_pos = t.find(".P")
+            
+            site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}"
+            dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}"
+            r = "R" + f"{int(t[r_pos+2:r_pos+6]):0000}"
+            u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}"
+            
+            res = f"{site}|{dh}|{r}{u}"
+            
+            if s_pos > 0:
+                res += f"|S{int(t[s_pos+2:s_pos+4]):00}"
+            if a_pos > 0:
+                res += f"|A{int(t[a_pos+2:a_pos+4]):00}"
+            if b_pos > 0:
+                res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
+            if p_pos > 0:
+                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+        except:
+            res = t
+    
+    # syd20 family (biggest variety)
+    elif "SYD20" in t:
+        res = "SYD20"
+        
+        # Zone/qualifier: q2, c1, m1, block2, block30, etc.
+        if "-Q" in t:
+            q_pos = t.find("-Q")
+            res += f"|Q{int(t[q_pos+2:q_pos+4]):00}"
+        elif "-C" in t:
+            c_pos = t.find("-C")
+            res += f"|C{int(t[c_pos+2:c_pos+4]):00}"
+        elif "-M" in t:
+            m_pos = t.find("-M")
+            res += f"|M{int(t[m_pos+2:m_pos+4]):00}"
+        elif "BLOCK" in t:
+            bm = t.find("BLOCK")
+            res += f"|BLOCK{int(t[bm+5:bm+7]):00}"
+        
+        # b-t-r
+        if "-B" in t:
+            b_pos = t.find("-B")
+            res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
+        if "-T" in t:
+            t_pos = t.find("-T")
+            res += f"|T{int(t[t_pos+2:t_pos+4]):00}"
+        if "-R" in t:
+            r_pos = t.find("-R")
+            res += f"|R{int(t[r_pos+2:r_pos+5]):000}"
+        
+        # Port extraction - covers almost everything
+        p = ""
+        if "ETH" in t:
+            p = t[t.find("ETH") + 3:]
+        elif "ET-" in t:
+            p = t[t.find("ET-") + 3:]
+        elif "NET" in t:
+            p = t[t.find("NET") + 3:]
+        elif "COMP" in t:
+            p = t[t.find("COMP") + 4:]
+        
+        port_found = False
+        for i in range(len(p)):
+            if p[i].isdigit():
+                num = ""
+                j = i
+                while j < len(p) and p[j].isdigit():
+                    num += p[j]
+                    j += 1
+                if num:
+                    res += f"|PORT{int(num):000}"
+                    port_found = True
+                    break
+        
+        # Last resort - grab last digits
+        if not port_found:
+            last = t[-3:]
+            if last and last[-1].isdigit():
+                res += f"|PORT{int(last):000}"
+    
+    else:
+        res = t
+    
+    return res
 
 
 def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
-    """Adds SortA and SortB columns using make_sort_key."""
+    """
+    Dynamically generates sort keys for **every** key column that appears
+    in the generated cutsheet tabs.
+
+    Specifically creates sort keys for:
+    - Device A + Rack A
+    - Every Patch Panel / Full Label / DMARC / Passive / OHR column (PP A, PP B, etc.)
+    - Device B + Rack B
+
+    Example output columns on the right:
+    Sort - Device A, Sort - Rack A, Sort - PP A, Sort - PP B, Sort - Device B, Sort - Rack B
+
+    This matches the layout you showed: Device A | Rack A | PP A | PP B | Device B | Rack B
+    """
     df = df.copy()
 
-    possible_a = ['DeviceA Name', 'Device A Name', 'Source Device Name']
-    possible_b = ['DeviceB Name', 'Device B Name', 'Remote Device Name']
+    created = []
 
-    pp_cols = [c for c in df.columns if 'patch' in c.lower() or 'full label' in c.lower() or 'easymark' in c.lower()]
+    # 1. Device A side
+    for pattern, label in [
+        (['DeviceA Name', 'Device A Name', 'Source Device Name'], 'Sort - Device A'),
+        (['DeviceA Rack', 'Rack A', 'RackA'], 'Sort - Rack A'),
+    ]:
+        col = next((c for c in pattern if c in df.columns), None)
+        if col:
+            name = label
+            i = 1
+            while name in df.columns:
+                name = f"{label} ({i})"
+                i += 1
+            df[name] = df[col].apply(make_sort_key)
+            created.append(name)
 
-    col_a = next((c for c in possible_a if c in df.columns), None)
-    col_b = next((c for c in possible_b if c in df.columns), None)
+    # 2. All Patch Panel / path-related columns (these become PP A, PP B, DMARC, etc.)
+    pp_keywords = ['patch', 'full label', 'easymark', 'dmarc', 'passive', 'ohr', 'pp:']
+    for col in df.columns:
+        if any(kw in col.lower() for kw in pp_keywords) and col not in created:
+            name = f"Sort - {col}"
+            i = 1
+            while name in df.columns:
+                name = f"Sort - {col} ({i})"
+                i += 1
+            df[name] = df[col].apply(make_sort_key)
+            created.append(name)
 
-    if col_a:
-        df['SortA'] = df[col_a].apply(make_sort_key)
-    else:
-        df['SortA'] = ''
-
-    if col_b:
-        df['SortB'] = df[col_b].apply(make_sort_key)
-    elif pp_cols:
-        df['SortB'] = df[pp_cols[0]].apply(make_sort_key)
-    else:
-        df['SortB'] = ''
+    # 3. Device B side
+    for pattern, label in [
+        (['DeviceB Name', 'Device B Name', 'Remote Device Name'], 'Sort - Device B'),
+        (['DeviceB Rack', 'Rack B', 'RackB'], 'Sort - Rack B'),
+    ]:
+        col = next((c for c in pattern if c in df.columns), None)
+        if col:
+            name = label
+            i = 1
+            while name in df.columns:
+                name = f"{label} ({i})"
+                i += 1
+            df[name] = df[col].apply(make_sort_key)
+            created.append(name)
 
     return df
+
+
+def get_sort_key_columns(df: pd.DataFrame):
+    """Returns all columns that start with 'Sort -' in a consistent order."""
+    return sorted([c for c in df.columns if c.startswith('Sort -')])
 
 
 def preprocess_and_filter_connections(df: pd.DataFrame, filters: dict = None) -> pd.DataFrame:
@@ -694,15 +812,14 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
             ws.set_column(6, 6, 30)
 
             # Sort keys on the far right (same as full mode)
-            sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+            sort_key_cols = get_sort_key_columns(grp)
             sort_start_col = 21
             if sort_key_cols:
                 sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
                 for idx, colname in enumerate(sort_key_cols):
                     cidx = sort_start_col + idx
                     ws.set_column(cidx, cidx, 34)
-                    header_name = 'SortA (Device Side)' if colname == 'SortA' else 'SortB (Path / Far End)'
-                    ws.write(0, cidx, header_name, sort_hdr)
+                    ws.write(0, cidx, colname, sort_hdr)
 
             for i, rv in enumerate(grp.itertuples(index=False), 1):
                 v = list(rv)
@@ -736,15 +853,14 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
             for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
 
             # Sort key headers on the right
-            sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+            sort_key_cols = get_sort_key_columns(grp)
             sort_start_col = 21
             if sort_key_cols:
                 sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
                 for idx, colname in enumerate(sort_key_cols):
                     cidx = sort_start_col + idx
                     ws.set_column(cidx, cidx, 34)
-                    header_name = 'SortA (Device Side)' if colname == 'SortA' else 'SortB (Path / Far End)'
-                    ws.write(0, cidx, header_name, sort_hdr)
+                    ws.write(0, cidx, colname, sort_hdr)
             for i, rv in enumerate(grp.itertuples(index=False), 1):
                 v = list(rv)
                 da = fmt_d(v[DA_NAME], v[DA_PORT])
@@ -769,7 +885,7 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 ws.write(i, 14, '', f['note'])
 
                 # === Sort Keys on the far right (starting at column V = 21) ===
-                sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+                sort_key_cols = get_sort_key_columns(grp)
                 sort_start_col = 21
                 if sort_key_cols:
                     for idx, colname in enumerate(sort_key_cols):
@@ -814,9 +930,9 @@ with st.form("options_form"):
     aux_racks = {r.strip() for r in aux_racks_input.split(",") if r.strip()}
 
     add_sort_keys_option = st.checkbox(
-        "Add Sort Keys on the right side (SortA / SortB columns)",
+        "Add Sort Keys on the right side (for all path columns)",
         value=True,
-        help="Adds physical sort keys starting at column V. Uses the migrated make_sort_key logic from your Desktop work."
+        help="Uses your comprehensive SortKey logic (OHR, Passive, PP:SYD, full syd20 family). Creates the right sort keys for whatever columns exist on each tab and places them starting at column V."
     )
 
     exclude_done = st.checkbox(
@@ -945,3 +1061,35 @@ if submitted:
             st.exception(e)
 
 st.caption("")
+
+# ── Sort Key Tester (always available) ────────────────────────────────────────
+st.divider()
+with st.expander("🧪 Sort Key Tester — Test the new comprehensive logic", expanded=False):
+    st.markdown("""
+    Paste any strings here (one per line) — PP labels, device names, OHR, Passive, etc. — 
+    to see exactly what sort keys the migrated VBA logic produces.
+    """)
+    
+    test_input = st.text_area(
+        "Paste test strings",
+        height=140,
+        placeholder="PP:SYD20.3.DH8.R2302.U1.A1.P4\nsyd20-c1-b70-t0-r9 Ethernet1/1\nsyd20-c1-b12-t2-r8 et-0/0/12"
+    )
+    
+    if st.button("Test Sort Keys", key="sortkey_tester"):
+        if test_input.strip():
+            lines = [line.strip() for line in test_input.split("\n") if line.strip()]
+            results = []
+            for line in lines:
+                try:
+                    key = make_sort_key(line)
+                    results.append({"Original": line, "Sort Key": key})
+                except Exception as ex:
+                    results.append({"Original": line, "Sort Key": f"ERROR: {ex}"})
+            
+            if results:
+                st.dataframe(results, use_container_width=True, hide_index=True)
+                st.caption(f"Tested {len(results)} strings using the full ported VBA logic.")
+        else:
+            st.warning("Please paste at least one string to test.")
+
