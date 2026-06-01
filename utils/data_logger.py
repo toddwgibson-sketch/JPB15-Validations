@@ -30,20 +30,19 @@ LOG_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
 def ensure_log_exists():
     """Create the log file with proper columns if it doesn't exist."""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    abs_path = LOG_FILE.resolve()
     
     if not LOG_FILE.exists():
-        df = pd.DataFrame(columns=[
-            "timestamp",
-            "hall",
-            "rack_type",
-            "building",
-            "error_category",
-            "count",
-            "source_file",
-            "processed_by"
-        ])
-        df.to_excel(LOG_FILE, index=False)
-        print(f"Created new error log at: {LOG_FILE}")
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Error Log"
+        headers = ["timestamp", "hall", "rack_type", "building", 
+                   "error_category", "count", "source_file", "processed_by"]
+        ws.append(headers)
+        wb.save(LOG_FILE)
+        wb.close()
+        print(f"Created new error log at: {abs_path}")
 
 def log_errors(
     hall: str,
