@@ -116,140 +116,156 @@ def make_sort_key(txt: str) -> str:
     """
     Comprehensive SortKey function - direct port of your working VBA logic.
     Handles OHR, Passive+DISTA, PP:SYD, and the full syd20 family with all qualifiers.
+    
+    This version is defensively wrapped so one weird string won't crash the whole run.
     """
     if not txt:
         return ""
     
-    t = str(txt).strip().upper()
-    res = ""
-    
-    # OHR
-    if "OHR" in t:
-        try:
-            syd_pos = t.find("SYD")
-            dh_pos = t.find("DH")
-            ohr_pos = t.find("OHR")
-            u_pos = t.find(".U")
-            p_pos = t.find(".P")
+    try:
+        t = str(txt).strip().upper()
+        res = ""
+        
+        # OHR
+        if "OHR" in t:
+            try:
+                syd_pos = t.find("SYD")
+                dh_pos = t.find("DH")
+                ohr_pos = t.find("OHR")
+                u_pos = t.find(".U")
+                p_pos = t.find(".P")
+                
+                site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}" if syd_pos >= 0 else "SYD"
+                dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}" if dh_pos >= 0 else ""
+                ohr = "OHR" + f"{int(t[ohr_pos+3:ohr_pos+7]):0000}" if ohr_pos >= 0 else ""
+                u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}" if u_pos >= 0 else ""
+                
+                res = f"{site}|{dh}|{ohr}{u}"
+                if p_pos > 0:
+                    res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+            except:
+                res = t
+        
+        # Passive + DISTA
+        elif "PASSIVE" in t and "DISTA" in t:
+            try:
+                dista_pos = t.find("DISTA")
+                u_pos = t.find(".U")
+                p_pos = t.find(".P")
+                res = f"Passive|DISTA{int(t[dista_pos+6:dista_pos+10]):0000}"
+                if u_pos > 0:
+                    res += f"|U{int(t[u_pos+2:u_pos+5]):000}"
+                if p_pos > 0:
+                    res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+            except:
+                res = t
+        
+        # Regular PP:SYD R... (with B1, S7, A, P, etc.)
+        elif "PP:SYD" in t and ".R" in t:
+            try:
+                syd_pos = t.find("SYD")
+                dh_pos = t.find("DH")
+                r_pos = t.find(".R")
+                u_pos = t.find(".U")
+                s_pos = t.find(".S")
+                a_pos = t.find(".A")
+                b_pos = t.find(".B")
+                p_pos = t.find(".P")
+                
+                site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}"
+                dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}"
+                r = "R" + f"{int(t[r_pos+2:r_pos+6]):0000}"
+                u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}"
+                
+                res = f"{site}|{dh}|{r}{u}"
+                
+                if s_pos > 0:
+                    res += f"|S{int(t[s_pos+2:s_pos+4]):00}"
+                if a_pos > 0:
+                    res += f"|A{int(t[a_pos+2:a_pos+4]):00}"
+                if b_pos > 0:
+                    res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
+                if p_pos > 0:
+                    res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+            except:
+                res = t
+        
+        # syd20 family (biggest variety)
+        elif "SYD20" in t:
+            res = "SYD20"
             
-            site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}" if syd_pos >= 0 else "SYD"
-            dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}" if dh_pos >= 0 else ""
-            ohr = "OHR" + f"{int(t[ohr_pos+3:ohr_pos+7]):0000}" if ohr_pos >= 0 else ""
-            u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}" if u_pos >= 0 else ""
+            # Zone/qualifier: q2, c1, m1, block2, block30, etc.
+            if "-Q" in t:
+                q_pos = t.find("-Q")
+                res += f"|Q{int(t[q_pos+2:q_pos+4]):00}"
+            elif "-C" in t:
+                c_pos = t.find("-C")
+                res += f"|C{int(t[c_pos+2:c_pos+4]):00}"
+            elif "-M" in t:
+                m_pos = t.find("-M")
+                res += f"|M{int(t[m_pos+2:m_pos+4]):00}"
+            elif "BLOCK" in t:
+                bm = t.find("BLOCK")
+                # Safer digit extraction after BLOCK
+                after = t[bm + 5:]
+                digits = ''.join(ch for ch in after if ch.isdigit())
+                if digits:
+                    res += f"|BLOCK{int(digits):00}"
+                else:
+                    res += "|BLOCK??"
             
-            res = f"{site}|{dh}|{ohr}{u}"
-            if p_pos > 0:
-                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
-        except:
-            res = t
-    
-    # Passive + DISTA
-    elif "PASSIVE" in t and "DISTA" in t:
-        try:
-            dista_pos = t.find("DISTA")
-            u_pos = t.find(".U")
-            p_pos = t.find(".P")
-            res = f"Passive|DISTA{int(t[dista_pos+6:dista_pos+10]):0000}"
-            if u_pos > 0:
-                res += f"|U{int(t[u_pos+2:u_pos+5]):000}"
-            if p_pos > 0:
-                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
-        except:
-            res = t
-    
-    # Regular PP:SYD R... (with B1, S7, A, P, etc.)
-    elif "PP:SYD" in t and ".R" in t:
-        try:
-            syd_pos = t.find("SYD")
-            dh_pos = t.find("DH")
-            r_pos = t.find(".R")
-            u_pos = t.find(".U")
-            s_pos = t.find(".S")
-            a_pos = t.find(".A")
-            b_pos = t.find(".B")
-            p_pos = t.find(".P")
-            
-            site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}"
-            dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}"
-            r = "R" + f"{int(t[r_pos+2:r_pos+6]):0000}"
-            u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}"
-            
-            res = f"{site}|{dh}|{r}{u}"
-            
-            if s_pos > 0:
-                res += f"|S{int(t[s_pos+2:s_pos+4]):00}"
-            if a_pos > 0:
-                res += f"|A{int(t[a_pos+2:a_pos+4]):00}"
-            if b_pos > 0:
+            # b-t-r
+            if "-B" in t:
+                b_pos = t.find("-B")
                 res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
-            if p_pos > 0:
-                res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
-        except:
+            if "-T" in t:
+                t_pos = t.find("-T")
+                res += f"|T{int(t[t_pos+2:t_pos+4]):00}"
+            if "-R" in t:
+                r_pos = t.find("-R")
+                res += f"|R{int(t[r_pos+2:r_pos+5]):000}"
+            
+            # Port extraction - covers almost everything
+            p = ""
+            if "ETH" in t:
+                p = t[t.find("ETH") + 3:]
+            elif "ET-" in t:
+                p = t[t.find("ET-") + 3:]
+            elif "NET" in t:
+                p = t[t.find("NET") + 3:]
+            elif "COMP" in t:
+                p = t[t.find("COMP") + 4:]
+            
+            port_found = False
+            for i in range(len(p)):
+                if p[i].isdigit():
+                    num = ""
+                    j = i
+                    while j < len(p) and p[j].isdigit():
+                        num += p[j]
+                        j += 1
+                    if num:
+                        res += f"|PORT{int(num):000}"
+                        port_found = True
+                        break
+            
+            # Last resort - grab last digits
+            if not port_found:
+                last = t[-3:]
+                if last and last[-1].isdigit():
+                    res += f"|PORT{int(last):000}"
+        
+        else:
             res = t
-    
-    # syd20 family (biggest variety)
-    elif "SYD20" in t:
-        res = "SYD20"
         
-        # Zone/qualifier: q2, c1, m1, block2, block30, etc.
-        if "-Q" in t:
-            q_pos = t.find("-Q")
-            res += f"|Q{int(t[q_pos+2:q_pos+4]):00}"
-        elif "-C" in t:
-            c_pos = t.find("-C")
-            res += f"|C{int(t[c_pos+2:c_pos+4]):00}"
-        elif "-M" in t:
-            m_pos = t.find("-M")
-            res += f"|M{int(t[m_pos+2:m_pos+4]):00}"
-        elif "BLOCK" in t:
-            bm = t.find("BLOCK")
-            res += f"|BLOCK{int(t[bm+5:bm+7]):00}"
+        return res
         
-        # b-t-r
-        if "-B" in t:
-            b_pos = t.find("-B")
-            res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
-        if "-T" in t:
-            t_pos = t.find("-T")
-            res += f"|T{int(t[t_pos+2:t_pos+4]):00}"
-        if "-R" in t:
-            r_pos = t.find("-R")
-            res += f"|R{int(t[r_pos+2:r_pos+5]):000}"
-        
-        # Port extraction - covers almost everything
-        p = ""
-        if "ETH" in t:
-            p = t[t.find("ETH") + 3:]
-        elif "ET-" in t:
-            p = t[t.find("ET-") + 3:]
-        elif "NET" in t:
-            p = t[t.find("NET") + 3:]
-        elif "COMP" in t:
-            p = t[t.find("COMP") + 4:]
-        
-        port_found = False
-        for i in range(len(p)):
-            if p[i].isdigit():
-                num = ""
-                j = i
-                while j < len(p) and p[j].isdigit():
-                    num += p[j]
-                    j += 1
-                if num:
-                    res += f"|PORT{int(num):000}"
-                    port_found = True
-                    break
-        
-        # Last resort - grab last digits
-        if not port_found:
-            last = t[-3:]
-            if last and last[-1].isdigit():
-                res += f"|PORT{int(last):000}"
-    
-    else:
-        res = t
-    
-    return res
+    except Exception:
+        # Ultimate safety net: never let one weird string kill the whole job
+        try:
+            return str(txt).strip().upper()[:80]
+        except:
+            return "SORTKEY_ERROR"
 
 
 def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
