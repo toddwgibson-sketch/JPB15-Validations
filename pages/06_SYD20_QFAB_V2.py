@@ -689,6 +689,46 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
             result_bytes, filename = process_files(cutsheet_file.getvalue(), input_files)
             if result_bytes:
                 st.success("Processing complete!")
+
+                # ====================== PRE-DOWNLOAD ANALYSIS ======================
+                st.subheader("📊 Pre-Download Analysis")
+
+                from io import BytesIO
+                wb_preview = load_workbook(BytesIO(result_bytes))
+
+                # --- Summary Tab Preview ---
+                if "summary" in wb_preview.sheetnames:
+                    ws_sum = wb_preview["summary"]
+                    st.markdown("**Summary Tab**")
+
+                    summary_data = []
+                    for row in ws_sum.iter_rows(min_row=1, max_row=ws_sum.max_row, values_only=True):
+                        summary_data.append([str(c) if c is not None else "" for c in row])
+
+                    if summary_data:
+                        st.table(summary_data)
+
+                # --- Quick Metrics ---
+                st.markdown("**Tab Row Counts**")
+
+                tab_counts = {}
+                for sheet_name in wb_preview.sheetnames:
+                    if sheet_name.lower() != "summary":
+                        tab_counts[sheet_name] = max(0, wb_preview[sheet_name].max_row - 1)
+
+                # Display in columns
+                cols = st.columns(len(tab_counts) if tab_counts else 1)
+                for i, (tab, count) in enumerate(tab_counts.items()):
+                    with cols[i]:
+                        st.metric(tab, count)
+
+                # Simple bar chart of issues
+                if any(v > 0 for v in tab_counts.values()):
+                    import pandas as pd
+                    df_counts = pd.DataFrame(list(tab_counts.items()), columns=["Tab", "Rows"])
+                    st.bar_chart(df_counts.set_index("Tab"))
+
+                # ====================== DOWNLOAD ======================
                 st.download_button(
                     "📥 Download Formatted Report",
                     data=result_bytes,
