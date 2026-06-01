@@ -247,34 +247,6 @@ else:
 
 st.divider()
 
-# ====================== QUICK BREAKDOWNS ======================
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("**Errors by Hall**")
-    if not current.empty:
-        hall_sum = current.groupby('hall')['count'].sum().reset_index()
-        fig_hall = px.bar(hall_sum, x='hall', y='count', color='hall',
-                          color_discrete_sequence=px.colors.qualitative.Pastel,
-                          text='count')
-        fig_hall.update_layout(showlegend=False, height=280, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_hall, use_container_width=True)
-    else:
-        st.info("No data")
-
-with col2:
-    st.markdown("**Errors by Rack Type**")
-    if not current.empty:
-        type_sum = current.groupby('rack_type')['count'].sum().reset_index()
-        fig_type = px.pie(type_sum, names='rack_type', values='count', hole=0.5,
-                          color_discrete_sequence=px.colors.qualitative.Set3)
-        fig_type.update_layout(height=280, margin=dict(t=10, b=10))
-        st.plotly_chart(fig_type, use_container_width=True)
-    else:
-        st.info("No data")
-
-st.divider()
-
 # ====================== CATEGORY × BUILDING PIVOT (what you asked for) ======================
 st.markdown('<div class="section-header">Errors by Category × Building</div>', unsafe_allow_html=True)
 
@@ -327,43 +299,6 @@ if not current.empty:
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No current data after applying latest-per-building logic.")
-
-st.divider()
-
-# ====================== TOP PROBLEMATIC RACKS ======================
-st.markdown('<div class="section-header">Top Problematic Racks / Buildings</div>', unsafe_allow_html=True)
-
-if not current.empty:
-    rack_summary = (
-        current.groupby(['building', 'hall', 'rack_type'])['count']
-        .sum()
-        .reset_index()
-        .sort_values('count', ascending=False)
-        .head(15)
-    )
-
-    fig_racks = px.bar(
-        rack_summary,
-        x='building',
-        y='count',
-        color='hall',
-        hover_data=['rack_type'],
-        title=None,
-        color_discrete_sequence=px.colors.qualitative.Set2,
-        text='count'
-    )
-    fig_racks.update_traces(textposition="outside")
-    fig_racks.update_layout(
-        height=420,
-        xaxis_tickangle=-35,
-        margin=dict(t=20, b=40),
-        yaxis_title="Total Errors",
-        xaxis_title=None,
-        legend_title="Hall"
-    )
-    st.plotly_chart(fig_racks, use_container_width=True)
-else:
-    st.info("No data for top racks.")
 
 st.divider()
 
