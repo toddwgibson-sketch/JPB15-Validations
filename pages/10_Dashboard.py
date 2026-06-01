@@ -19,10 +19,12 @@ st.set_page_config(
 # ====================== BEAUTIFUL C-SUITE STYLING ======================
 st.markdown("""
 <style>
+    .stApp .main-header,
     .main-header {
-        font-size: 10rem;
+        font-size: 4.5rem !important;
         font-weight: 700;
         margin-bottom: 0.1rem;
+        line-height: 1.1;
     }
     .sub-header {
         font-size: 1.05rem;
@@ -146,6 +148,33 @@ with col3:
     st.metric("Halls Active", active_halls)
 with col4:
     st.metric("Avg Errors per Rack", avg_errors_per_rack)
+
+st.divider()
+
+# ====================== LOG FILE LOCATION (debug helper) ======================
+with st.expander("📍 Where is the dashboard data stored? (Click to expand)", expanded=False):
+    abs_path = DATA_FILE.resolve()
+    st.write("**Current log file path this Dashboard is using:**")
+    st.code(str(abs_path))
+
+    if DATA_FILE.exists():
+        st.success("✅ The log file exists at this location.")
+        file_size = DATA_FILE.stat().st_size
+        st.caption(f"File size: {file_size:,} bytes")
+
+        if st.button("📥 Download current validation_error_log.xlsx", key="download_log"):
+            with open(DATA_FILE, "rb") as f:
+                st.download_button(
+                    "Download validation_error_log.xlsx",
+                    data=f,
+                    file_name="validation_error_log.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+    else:
+        st.warning("The log file does **not** exist at this location yet.")
+        st.info("Run one of the tools (e.g. SYD20 QFAB V2) and process some files. The file will be created automatically on first successful log.")
+
+    st.caption("Note: When viewing on Streamlit Cloud, this path points to the server, not your computer. Run the app locally from the repo folder to have the file on your own machine.")
 
 st.divider()
 
