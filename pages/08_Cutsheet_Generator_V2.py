@@ -112,10 +112,75 @@ def classify_internal_cables(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 import re
 
+
+def extract_number_after(txt: str, delimiter: str) -> int:
+    """Port of the VBA ExtractNumberAfter helper.
+    Finds the delimiter, then collects consecutive digits immediately following it.
+    Returns 0 if delimiter not present or no digits follow.
+    Used for safe extraction of C/B/T/R numbers even when single-digit or followed by non-digits.
+    """
+    if not txt or not delimiter:
+        return 0
+    pos = txt.find(delimiter)
+    if pos == -1:
+        return 0
+    i = pos + len(delimiter)
+    num_str = ""
+    while i < len(txt) and txt[i].isdigit():
+        num_str += txt[i]
+        i += 1
+    if not num_str:
+        return 0
+    return int(num_str)
+
+
+def _extract_port_digits(txt: str) -> str:
+    """Extract only the port digit hierarchy (e.g. 002|001) from a port value or full string.
+    Used to cleanly combine Device Name + Port column without duplication.
+    Now supports more port specs like compute/slot/port, wic [4]1 (port1) (for "no eth number" cases).
+    For pure port values (no device markers), takes ALL digits even if kw late.
+    Uses earliest port kw for device names to get tail.
+    COMPUTE/WIC produce |C/Wnnn as device subs.
+    """
+    if not txt:
+        return ""
+    t = str(txt).strip().upper()
+    port_kws = ["ETHERNET", "ETH", "ET-", "NET", "SLOT", "PORT", "COMP", "WIC"]
+    first_pos = float('inf')
+    best_kw = None
+    for kw in port_kws:
+        pos = t.find(kw)
+        if pos != -1 and pos < first_pos:
+            if kw == "COMP" and t[pos:pos+7].upper() == "COMPUTE":
+                continue  # COMPUTE handled specially as device sub, not port kw
+            first_pos = pos
+            best_kw = kw
+    has_device_markers = any(k in t for k in ["SYD20", "-B", "-T", "-R", "-C", "-Q", "-M"])
+    if has_device_markers:
+        # for full device name strings, use earliest kw to start port tail (avoids device digits)
+        if best_kw:
+            offsets = {"ETHERNET":8, "ETH":3, "ET-":3, "NET":3, "SLOT":4, "PORT":4, "COMP":4, "WIC":3}
+            p = t[first_pos + offsets[best_kw]:]
+            nums = re.findall(r'\d+', p)
+            if best_kw in ("COMPUTE", "WIC") and nums:
+                # skip the first num (sub id already added by special |C/W in make)
+                nums = nums[1:]
+        else:
+            nums = []
+    else:
+        # pure port spec (port col value): take ALL digits, even if kw is late or none
+        nums = re.findall(r'\d+', t)
+    if nums:
+        return '|'.join(f"{int(n):03d}" for n in nums)
+    return ""
+
+
 def make_sort_key(txt: str) -> str:
     """
     Comprehensive SortKey function - direct port of your working VBA logic.
     Handles OHR, Passive+DISTA, PP:SYD, and the full syd20 family with all qualifiers.
+    Also handles raw rack columns "Rack 3405 U42" (or "3405 U42") -> "3405|0042" (rack 4d if small, U always 04d).
+    Extended port specs for "no eth number" cases: compute/slot/port1-1, wic1 [4]1 (port1) etc. -> captures full hierarchy digits in tail (with COMPUTE as |C001, WIC as |W001 device subs to survive combine stripping). Bare e.g. SYD20-C1-B31-T0-R1-COMPUTE1-WIC1 -> ...|C001|W001 (no port).
     
     This version is defensively wrapped so one weird string won't crash the whole run.
     """
@@ -126,17 +191,22 @@ def make_sort_key(txt: str) -> str:
         t = str(txt).strip().upper()
         res = ""
 
-        # Handle raw "Rack XXXX UYY" strings (e.g. from Rack A / Rack B columns)
-        # Produce "9803|0030" style so U position is included for proper sorting within rack
-        if "RACK" in t:
+        # Handle raw "Rack XXXX UYY" or "XXXX UYY" or combined "racknum Uu" strings
+        # (from Rack A / Rack B columns; supports when RU is in separate column and we combine as "9803 U30")
+        # Also handles bare rack number like "3405" (common in some exports for DeviceA Rack / Rack A col).
+        # "no u number" case (bare rack or no RU) defaults to |0000 so all rack sort keys have consistent rack|U format.
+        # Produce "3405|0042" or "3405|0000" style (rack 04d if <4 digits, U always 04d) for proper physical sorting.
+        # Safe: skip if it looks like panel ".U" (PP/OHR/Passive labels have .Uxxx)
+        looks_like_rack = "RACK" in t or (t.isdigit() and len(t) >= 4) or (re.search(r'U\s*\d', t) and ".U" not in t)
+        if looks_like_rack:
             rack_m = re.search(r'(\d+)', t)
             u_m = re.search(r'U\s*(\d+)', t)
             if rack_m:
-                rack = rack_m.group(1)
-                if u_m:
-                    u = f"{int(u_m.group(1)):04d}"
-                    return f"{rack}|{u}"
-                return rack
+                rack = f"{int(rack_m.group(1)):04d}"
+                u = f"{int(u_m.group(1)):04d}" if u_m else "0000"
+                return f"{rack}|{u}"
+            if u_m:
+                return f"0000|{int(u_m.group(1)):04d}"
             return t
         
         # OHR
@@ -174,32 +244,28 @@ def make_sort_key(txt: str) -> str:
                 res = t
         
         # Regular PP:SYD R... (with B1, S7, A, P, etc.)
+        # Robust split-based to capture room (.3.), DH, R, U, S/A/B/P qualifiers
+        # Matches examples like PP:SYD20.3.DH8.R2302.U1.A1.P4 -> SYD20|03|DH08|R2302|U001|A001|P004
         elif "PP:SYD" in t and ".R" in t:
             try:
-                syd_pos = t.find("SYD")
-                dh_pos = t.find("DH")
-                r_pos = t.find(".R")
-                u_pos = t.find(".U")
-                s_pos = t.find(".S")
-                a_pos = t.find(".A")
-                b_pos = t.find(".B")
-                p_pos = t.find(".P")
-                
-                site = "SYD" + f"{int(t[syd_pos+3:syd_pos+5]):02d}"
-                dh = "DH" + f"{int(t[dh_pos+2:dh_pos+4]):02d}"
-                r = "R" + f"{int(t[r_pos+2:r_pos+6]):0000}"
-                u = "U" + f"{int(t[u_pos+2:u_pos+5]):000}"
-                
-                res = f"{site}|{dh}|{r}{u}"
-                
-                if s_pos > 0:
-                    res += f"|S{int(t[s_pos+2:s_pos+4]):00}"
-                if a_pos > 0:
-                    res += f"|A{int(t[a_pos+2:a_pos+4]):00}"
-                if b_pos > 0:
-                    res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
-                if p_pos > 0:
-                    res += f"|P{int(t[p_pos+2:p_pos+5]):000}"
+                parts = t.split('.')
+                site = parts[0].replace("PP:", "").upper()  # SYD20
+                room = f"{int(parts[1]):02d}" if len(parts) > 1 else "00"
+                dh_raw = parts[2] if len(parts) > 2 else ""
+                dh = "DH" + f"{int(''.join(c for c in dh_raw if c.isdigit())):02d}" if dh_raw else ""
+                res = f"{site}|{room}|{dh}"
+                rest = parts[3:] if len(parts) > 3 else []
+                for tok in rest:
+                    tok = tok.strip()
+                    if not tok: continue
+                    m = re.match(r"([RUSA BP]+)(\d+)", tok, re.I)
+                    if m:
+                        let = m.group(1).upper().replace(" ", "")
+                        num = int(m.group(2))
+                        width = 4 if let[0] == "R" else 3
+                        res += f"|{let}{num:0{width}d}"
+                    else:
+                        res += f"|{tok.upper()}"
             except:
                 res = t
         
@@ -208,67 +274,75 @@ def make_sort_key(txt: str) -> str:
             res = "SYD20"
             
             # Zone/qualifier: q2, c1, m1, block2, block30, etc.
-            # Only add zone if no -B (to match demo outputs where c1-bXX uses the b as the building)
-            has_b = "-B" in t
-            if "-Q" in t and not has_b:
-                q_pos = t.find("-Q")
-                res += f"|Q{int(t[q_pos+2:q_pos+4]):00}"
-            elif "-C" in t and not has_b:
-                c_pos = t.find("-C")
-                after = t[c_pos+2:]
-                digits = ''.join(ch for ch in after if ch.isdigit())
-                if digits:
-                    res += f"|C{int(digits):00}"
-            elif "-M" in t and not has_b:
-                m_pos = t.find("-M")
-                after = t[m_pos+2:]
-                digits = ''.join(ch for ch in after if ch.isdigit())
-                if digits:
-                    res += f"|M{int(digits):00}"
+            # Follow the updated VBA: include zone even if -B present (C then B etc.)
+            if "-Q" in t:
+                qn = extract_number_after(t, "-Q")
+                res += f"|Q{qn:02d}"
+            elif "-C" in t:
+                cn = extract_number_after(t, "-C")
+                res += f"|C{cn:02d}"
+            elif "-M" in t:
+                mn = extract_number_after(t, "-M")
+                res += f"|M{mn:02d}"
             elif "BLOCK" in t:
                 bm = t.find("BLOCK")
                 after = t[bm + 5:]
                 digits = ''.join(ch for ch in after if ch.isdigit())
                 if digits:
-                    res += f"|BLOCK{int(digits):00}"
+                    res += f"|BLOCK{int(digits):02d}"
                 else:
                     res += "|BLOCK??"
             
             # b-t-r - use safe extraction to handle single digit followed by - (e.g. t0-r1)
             if "-B" in t:
-                res += "|B" + f"{extract_number_after(t, '-B'):00}"
+                bn = extract_number_after(t, "-B")
+                res += f"|B{bn:02d}"
             if "-T" in t:
-                res += "|T" + f"{extract_number_after(t, '-T'):00}"
+                tn = extract_number_after(t, "-T")
+                res += f"|T{tn:02d}"
             if "-R" in t:
-                res += "|R" + f"{extract_number_after(t, '-R'):000}"
+                rn = extract_number_after(t, "-R")
+                res += f"|R{rn:03d}"
+            
+            # Special handling for compute nodes etc. (e.g. -COMPUTE1) as device sub-hierarchy after R,
+            # append |C001 so it's kept in device base (not stripped as port in combine when port col present).
+            if "COMPUTE" in t:
+                cn = extract_number_after(t, "COMPUTE")
+                if cn == 0:
+                    m = re.search(r'COMPUTE(\d+)', t)
+                    if m: cn = int(m.group(1))
+                if cn > 0:
+                    res += f"|C{cn:03d}"
+            
+            # Similar special for WIC as device sub-hierarchy (e.g. after compute), |W001
+            # to protect from stripping in combine.
+            if "WIC" in t:
+                wn = extract_number_after(t, "WIC")
+                if wn == 0:
+                    m = re.search(r'WIC(\d+)', t)
+                    if m: wn = int(m.group(1))
+                if wn > 0:
+                    res += f"|W{wn:03d}"
             
             # Port extraction - include the FULL port hierarchy like "0/0/4" or "2/1"
-            # so sorting works by the actual ethernet port on the device
-            p = ""
-            if "ETHERNET" in t:
-                p = t[t.find("ETHERNET") + 8:]
-            elif "ETH" in t:
-                p = t[t.find("ETH") + 3:]
-            elif "ET-" in t:
-                p = t[t.find("ET-") + 3:]
-            elif "NET" in t:
-                p = t[t.find("NET") + 3:]
-            elif "COMP" in t:
-                p = t[t.find("COMP") + 4:]
-            
-            # Extract all number groups in order and pad each to 3 digits, join with |
-            nums = re.findall(r'\d+', p)
-            if nums:
-                port_part = '|'.join(f"{int(n):03d}" for n in nums)
+            # or compute/slot/port1-1, wic1 [4]1 (port1) etc. (for cases with no "eth" naming).
+            # Delegate to helper (earliest kw for names, all digits for pure port values).
+            # COMPUTE/WIC handled as |C/Wnnn device subs before port extract.
+            port_part = _extract_port_digits(t)
+            if port_part:
                 res += f"|{port_part}"
-            else:
-                # fallback last 3 digits
-                last = t[-3:]
-                if last and last[-1].isdigit():
-                    res += f"|PORT{int(last):000}"
+            # No else fallback: for bare device names (no port spec) we stop after b-t-r.
+            # Appending junk from t[-3:] was causing int() errors on strings like "SYD20-C1-B13-T2-R1".
         
         else:
             res = t
+            # Support for bare/standalone port strings (e.g. "et-0/0/0", "Ethernet1/1", "slot1/port1-1", "compute1-wic1 [4]1 (port1)")
+            # so that "Sort - DeviceA Port" (and similar) columns also produce usable numeric sort keys.
+            # Also acts as fallback for any unrecognized string that has port-like digits.
+            # Uses the shared _extract (all digits for pure port values).
+            port_part = _extract_port_digits(t)
+            if port_part:
+                res = port_part
         
         return res
         
@@ -286,36 +360,106 @@ def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
     in the generated cutsheet tabs.
 
     Specifically creates sort keys for:
-    - Device A + Rack A
-    - Every Patch Panel / Full Label / DMARC / Passive / OHR column (PP A, PP B, etc.)
-    - Device B + Rack B
+    - Device A (+ its Port if separate column) + Rack A
+    - Every Patch Panel / Full Label / DMARC / Passive / OHR / Port column (PP A, PP B, etc.)
+    - Device B (+ its Port if separate column) + Rack B
+
+    For Device A / Device B we combine the Name + Port columns (when the port lives in its own column)
+    so that "Sort - Device A" includes the actual ethernet port (e.g. et-0/0/0) for correct physical ordering.
+    This fixes cases where the input has bare "SYD20-C1-B13-T2-R1" in the name column + separate "DeviceA Port".
 
     Example output columns on the right:
     Sort - Device A, Sort - Rack A, Sort - PP A, Sort - PP B, Sort - Device B, Sort - Rack B
-
-    This matches the layout you showed: Device A | Rack A | PP A | PP B | Device B | Rack B
+    (plus Sort - DeviceA Port etc. when present)
     """
     df = df.copy()
 
     created = []
 
-    # 1. Device A side
-    for pattern, label in [
-        (['DeviceA Name', 'Device A Name', 'Source Device Name'], 'Sort - Device A'),
-        (['DeviceA Rack', 'Rack A', 'RackA'], 'Sort - Rack A'),
-    ]:
-        col = next((c for c in pattern if c in df.columns), None)
-        if col:
-            name = label
-            i = 1
-            while name in df.columns:
-                name = f"{label} ({i})"
-                i += 1
-            df[name] = df[col].apply(make_sort_key)
-            created.append(name)
+    # 1. Device A side (name + port combined for the main device sort key)
+    a_name_patterns = ['DeviceA Name', 'Device A Name', 'Source Device Name']
+    a_port_patterns = ['DeviceA Port', 'Device A Port', 'Source Device Port', 'DeviceA Interface', 'Device A Interface', 'A Port', 'Port A', 'Eth Port A', 'Ethernet Port A', 'A Interface', 'Interface A', 'A WIC', 'WIC Port A', 'WIC A', 'A WIC Port']
+    a_rack_patterns = ['DeviceA Rack', 'Rack A', 'RackA']
+
+    name_col = next((c for c in a_name_patterns if c in df.columns), None)
+    port_col = next((c for c in a_port_patterns if c in df.columns), None)
+    if not port_col and name_col:
+        # Broader fallback for port columns that may have "eth", "port", "interface", "wic" etc in name (for "no eth number" cases where col name doesn't match exact patterns)
+        for c in df.columns:
+            cl = c.lower()
+            if any(k in cl for k in ['port', 'eth', 'ethernet', 'interface', 'intf', 'wic']):
+                if any(k in cl for k in ['a', 'source', 'local', 'near']):
+                    port_col = c
+                    break
+    if name_col:
+        label = 'Sort - Device A'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        if port_col:
+            def _a_combined(row):
+                n = str(row.get(name_col, '') or '').strip()
+                p = str(row.get(port_col, '') or '').strip()
+                # Get device hierarchy from name (strip any embedded port so we don't duplicate)
+                device_base = make_sort_key(n)
+                if '|' in device_base:
+                    parts = device_base.split('|')
+                    # Strip trailing pure-digit segments (the port part) if present
+                    while parts and parts[-1].isdigit():
+                        parts.pop()
+                    device_base = '|'.join(parts)
+                # Always take the port digits from the dedicated Port column (the source of truth)
+                port_digits = _extract_port_digits(p)
+                if port_digits:
+                    if device_base:
+                        return f"{device_base}|{port_digits}"
+                    return port_digits
+                return device_base
+            df[name] = df.apply(_a_combined, axis=1)
+        else:
+            df[name] = df[name_col].apply(make_sort_key)
+        created.append(name)
+
+    # Rack A (combine with RU if the U position lives in a separate column)
+    a_ru_patterns = ['DeviceA RU', 'Device A RU', 'A RU']
+    rack_col = next((c for c in a_rack_patterns if c in df.columns), None)
+    ru_col = next((c for c in a_ru_patterns if c in df.columns), None)
+    if rack_col:
+        label = 'Sort - Rack A'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        if ru_col:
+            def _a_rack_combined(row):
+                r = str(row.get(rack_col, '') or '').strip()
+                u = str(row.get(ru_col, '') or '').strip()
+                if u and not re.search(r'U\s*\d', r):
+                    combined = f"{r} U{u}".strip()
+                else:
+                    combined = r
+                return make_sort_key(combined)
+            df[name] = df.apply(_a_rack_combined, axis=1)
+        else:
+            df[name] = df[rack_col].apply(make_sort_key)
+        created.append(name)
+
+    # Device A Port (standalone, now benefits from improved make_sort_key for bare ports)
+    if port_col:
+        label = 'Sort - DeviceA Port'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        df[name] = df[port_col].apply(make_sort_key)
+        created.append(name)
 
     # 2. All Patch Panel / path-related columns (these become PP A, PP B, DMARC, etc.)
-    pp_keywords = ['patch', 'full label', 'easymark', 'dmarc', 'passive', 'ohr', 'pp:']
+    pp_keywords = ['patch', 'full label', 'easymark', 'dmarc', 'passive', 'ohr', 'pp']
     for col in df.columns:
         if any(kw in col.lower() for kw in pp_keywords) and col not in created:
             name = f"Sort - {col}"
@@ -326,20 +470,87 @@ def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
             df[name] = df[col].apply(make_sort_key)
             created.append(name)
 
-    # 3. Device B side
-    for pattern, label in [
-        (['DeviceB Name', 'Device B Name', 'Remote Device Name'], 'Sort - Device B'),
-        (['DeviceB Rack', 'Rack B', 'RackB'], 'Sort - Rack B'),
-    ]:
-        col = next((c for c in pattern if c in df.columns), None)
-        if col:
-            name = label
-            i = 1
-            while name in df.columns:
-                name = f"{label} ({i})"
-                i += 1
-            df[name] = df[col].apply(make_sort_key)
-            created.append(name)
+    # 3. Device B side (name + port combined)
+    b_name_patterns = ['DeviceB Name', 'Device B Name', 'Remote Device Name']
+    b_port_patterns = ['DeviceB Port', 'Device B Port', 'Remote Device Port', 'DeviceB Interface', 'Device B Interface', 'B Port', 'Port B', 'Eth Port B', 'Ethernet Port B', 'B Interface', 'Interface B', 'B WIC', 'WIC Port B', 'WIC B', 'B WIC Port']
+    b_rack_patterns = ['DeviceB Rack', 'Rack B', 'RackB']
+
+    name_col = next((c for c in b_name_patterns if c in df.columns), None)
+    port_col = next((c for c in b_port_patterns if c in df.columns), None)
+    if not port_col and name_col:
+        # Broader fallback for port columns (for "no eth number" cases)
+        for c in df.columns:
+            cl = c.lower()
+            if any(k in cl for k in ['port', 'eth', 'ethernet', 'interface', 'intf', 'wic']):
+                if any(k in cl for k in ['b', 'remote', 'dest', 'far']):
+                    port_col = c
+                    break
+    if name_col:
+        label = 'Sort - Device B'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        if port_col:
+            def _b_combined(row):
+                n = str(row.get(name_col, '') or '').strip()
+                p = str(row.get(port_col, '') or '').strip()
+                # Get device hierarchy from name (strip any embedded port so we don't duplicate)
+                device_base = make_sort_key(n)
+                if '|' in device_base:
+                    parts = device_base.split('|')
+                    # Strip trailing pure-digit segments (the port part) if present
+                    while parts and parts[-1].isdigit():
+                        parts.pop()
+                    device_base = '|'.join(parts)
+                # Always take the port digits from the dedicated Port column (the source of truth)
+                port_digits = _extract_port_digits(p)
+                if port_digits:
+                    if device_base:
+                        return f"{device_base}|{port_digits}"
+                    return port_digits
+                return device_base
+            df[name] = df.apply(_b_combined, axis=1)
+        else:
+            df[name] = df[name_col].apply(make_sort_key)
+        created.append(name)
+
+    # Rack B (combine with RU if the U position lives in a separate column)
+    b_ru_patterns = ['DeviceB RU', 'Device B RU', 'B RU']
+    rack_col = next((c for c in b_rack_patterns if c in df.columns), None)
+    ru_col = next((c for c in b_ru_patterns if c in df.columns), None)
+    if rack_col:
+        label = 'Sort - Rack B'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        if ru_col:
+            def _b_rack_combined(row):
+                r = str(row.get(rack_col, '') or '').strip()
+                u = str(row.get(ru_col, '') or '').strip()
+                if u and not re.search(r'U\s*\d', r):
+                    combined = f"{r} U{u}".strip()
+                else:
+                    combined = r
+                return make_sort_key(combined)
+            df[name] = df.apply(_b_rack_combined, axis=1)
+        else:
+            df[name] = df[rack_col].apply(make_sort_key)
+        created.append(name)
+
+    # Device B Port standalone
+    if port_col:
+        label = 'Sort - DeviceB Port'
+        name = label
+        i = 1
+        while name in df.columns:
+            name = f"{label} ({i})"
+            i += 1
+        df[name] = df[port_col].apply(make_sort_key)
+        created.append(name)
 
     return df
 
@@ -411,8 +622,8 @@ def preprocess_and_filter_connections(df: pd.DataFrame, filters: dict = None) ->
 
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
-COLOR_RJ45        = '#FFCCCC'
-COLOR_RJ45_SERIAL = '#CCFFCC'
+COLOR_RJ45        = '#FFCCCC'  # bg for RJ45 tabs (pastel); actual tab color is red (see tab_hex in build)
+COLOR_RJ45_SERIAL = '#CCFFCC'  # bg for serial; tab color is green
 COLOR_DB9         = '#FFB347'
 COLOR_400G_AOC    = '#CCE5FF'
 COLOR_100G_AOC    = '#E0F0FF'
@@ -428,12 +639,15 @@ RED       = '#C00000'
 ROW_H     = 15
 
 def assign_color(ct):
-    if ct == 'Copper RJ45 cable':          return COLOR_RJ45
-    if ct == 'Copper RJ45 cable - serial': return COLOR_RJ45_SERIAL
-    if 'DB9' in ct:                        return COLOR_DB9
-    if '400G AOC' in ct:                   return COLOR_400G_AOC
-    if 'AOC' in ct:                        return COLOR_100G_AOC
-    if 'DAC' in ct:                        return COLOR_DAC
+    base = ct.replace(' (Internal)', '')
+    if 'Copper RJ45 cable - serial' in base:
+        return COLOR_RJ45_SERIAL
+    elif 'Copper RJ45 cable' in base:
+        return COLOR_RJ45
+    if 'DB9' in base:                        return COLOR_DB9
+    if '400G AOC' in base:                   return COLOR_400G_AOC
+    if 'AOC' in base:                        return COLOR_100G_AOC
+    if 'DAC' in base:                        return COLOR_DAC
     return COLOR_OTHER
 
 CABLE_TAB_NAMES = {
@@ -553,6 +767,20 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         return None
 
     cable_hex = {ct: assign_color(ct) for ct in cable_types}
+
+    # Tab colors (sheet tabs in Excel) for copper RJ45 = red, serial = green (as requested)
+    # bg colors remain the soft pastels from COLOR_RJ45* for readability in cells.
+    # Other tabs use the same hex as their cell bg color.
+    tab_hex = {}
+    for ct in cable_types:
+        base = ct.replace(' (Internal)', '')
+        if 'Copper RJ45 cable - serial' in base:
+            tab_hex[ct] = GREEN
+        elif 'Copper RJ45 cable' in base:
+            tab_hex[ct] = RED
+        else:
+            tab_hex[ct] = cable_hex[ct]
+
     ALL_COLS = list(df.columns)
     CI = {n: ALL_COLS.index(n) for n in ALL_COLS}
     DA_RACK = CI['DeviceA Rack']; DA_RU = CI['DeviceA RU']
@@ -819,7 +1047,7 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         sname = ct_tab_names.get(ct, make_tab_name(ct, used))
         used.add(sname)
         ws = wb.add_worksheet(sname)
-        ws.set_tab_color(cable_hex[ct])
+        ws.set_tab_color(tab_hex[ct])
         ws.set_default_row(14.9)
         ws.freeze_panes(1, 0)
         last = 1 + len(grp)
@@ -842,15 +1070,16 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         if skip_heavy_progress:
             # Lite version: much simpler and faster to write
             ws.set_row(0, 15)
-            # Skip label and cable type, start with Device A etc.
-            lite_headers = ['Device A', 'Rack A', 'Device B', 'Rack B', 'Notes']
+            # Cable type put back as column A (label removed as redundant)
+            lite_headers = ['Cable Type', 'Device A', 'Rack A', 'Device B', 'Rack B', 'Notes']
             for ci, h in enumerate(lite_headers):
                 ws.write(0, ci, h, hdr_blue)
-            ws.set_column(0, 0, 45)
-            ws.set_column(1, 1, 22)
-            ws.set_column(2, 2, 45)
-            ws.set_column(3, 3, 22)
-            ws.set_column(4, 4, 30)
+            ws.set_column(0, 0, 25)  # cable type
+            ws.set_column(1, 1, 45)
+            ws.set_column(2, 2, 22)
+            ws.set_column(3, 3, 45)
+            ws.set_column(4, 4, 22)
+            ws.set_column(5, 5, 30)
 
             # Sort keys on the far right - skip for internal tabs
             if sort_key_cols:
@@ -867,12 +1096,13 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 db = fmt_d(v[DB_NAME], v[DB_PORT])
                 rb = fmt_r(v[DB_RACK], v[DB_RU])
                 ws.set_row(i, 15)
-                # Write starting at col 0, skipping removed label/cable type
-                ws.write(i, 0, da, f['tab'])
-                ws.write(i, 1, ra, f['tab'])
-                ws.write(i, 2, db, f['tab'])
-                ws.write(i, 3, rb, f['tab'])
-                ws.write(i, 4, '', f['note'])
+                # col 0: cable type back, then the rest shifted (no label)
+                ws.write(i, 0, ct, f['tab'])
+                ws.write(i, 1, da, f['tab'])
+                ws.write(i, 2, ra, f['tab'])
+                ws.write(i, 3, db, f['tab'])
+                ws.write(i, 4, rb, f['tab'])
+                ws.write(i, 5, '', f['note'])
 
                 # Write sort keys on the right (skip for internal)
                 if sort_key_cols:
@@ -883,13 +1113,22 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         else:
             # Full complex version
             ws.set_row(0, 15)
-            for ci, (h, hf) in enumerate(new_tpl_hdrs):
-                if ci == 11:  # the blank col (was original 13)
-                    # average range shifted: original H(7)-L(11) now F(5)-J(9)
-                    ws.write_formula(0, ci, f'=AVERAGE(F2:J{last})', hdr_plain, 0)
+            # Cable type back as first column (label removed)
+            effective_headers = ['Cable Type'] + [h for h, hf in new_tpl_hdrs]
+            for ci, h in enumerate(effective_headers):
+                if ci == 12:  # the blank col (now 12 after adding cable type)
+                    # average range: preps etc now shifted to cols 6-10 (G-K)
+                    ws.write_formula(0, ci, f'=AVERAGE(G2:K{last})', hdr_plain, 0)
+                elif ci == 0:
+                    ws.write(0, ci, h, hdr_blue)  # cable type header
                 else:
-                    ws.write(0, ci, h, hf)
-            for ci, w in enumerate(new_col_w): ws.set_column(ci, ci, w)
+                    # find matching format from original
+                    orig_hf = next((hf for hh, hf in new_tpl_hdrs if hh == h), hdr_blue)
+                    ws.write(0, ci, h, orig_hf)
+            # widths: cable type + the new ones
+            ws.set_column(0, 0, 25)  # cable type
+            for ci, w in enumerate(new_col_w):
+                ws.set_column(ci + 1, ci + 1, w)
 
             # Sort key headers on the right - skip for internal tabs
             if sort_key_cols:
@@ -906,20 +1145,21 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 db = fmt_d(v[DB_NAME], v[DB_PORT])
                 rb = fmt_r(v[DB_RACK], v[DB_RU])
                 ws.set_row(i, 15)
-                # Write starting at col 0, skipping removed label (0) and cable type (1)
-                ws.write(i, 0, da, f['tab'])
-                ws.write(i, 1, ra, f['tab'])
-                ws.write(i, 2, db, f['tab'])
-                ws.write(i, 3, rb, f['tab'])
-                ws.write(i, 4, 1, f['num'])
-                ws.write(i, 5, 0, f['num'])
+                # col 0: cable type back, then data shifted (skipped the label col)
+                ws.write(i, 0, ct, f['tab'])
+                ws.write(i, 1, da, f['tab'])
+                ws.write(i, 2, ra, f['tab'])
+                ws.write(i, 3, db, f['tab'])
+                ws.write(i, 4, rb, f['tab'])
+                ws.write(i, 5, 1, f['num'])
                 ws.write(i, 6, 0, f['num'])
                 ws.write(i, 7, 0, f['num'])
                 ws.write(i, 8, 0, f['num'])
                 ws.write(i, 9, 0, f['num'])
-                ws.write_blank(i, 10, None, f['tab'])
+                ws.write(i, 10, 0, f['num'])
                 ws.write_blank(i, 11, None, f['tab'])
-                ws.write(i, 12, '', f['note'])
+                ws.write_blank(i, 12, None, f['tab'])
+                ws.write(i, 13, '', f['note'])
 
                 # === Sort Keys on the far right - skip for internal tabs
                 if sort_key_cols:
@@ -1108,7 +1348,7 @@ with st.expander("🧪 Sort Key Tester — Test the new comprehensive logic", ex
     test_input = st.text_area(
         "Paste test strings",
         height=140,
-        placeholder="PP:SYD20.3.DH8.R2302.U1.A1.P4\nsyd20-c1-b70-t0-r9 Ethernet1/1\nsyd20-c1-b12-t2-r8 et-0/0/12"
+        placeholder="PP:SYD20.3.DH8.R2302.U1.A1.P4\nsyd20-c1-b70-t0-r9 Ethernet1/1\nsyd20-c1-b12-t2-r8 et-0/0/12\nSYD20-C1-B13-T2-R1\nsyd20-c1-b13-t2-r1 et-0/0/0\nRack 2708 U23\nRack 3405 U42\n3405\nsyd20-q2-b31-t0-r1 Ethernet2/1\nSYD20-Q2-B31-T0-R1\nsyd20-c1-b31-t0-r1-compute1 slot1/port1-1\nSYD20-C1-B31-T0-R1-COMPUTE1\nSYD20-C1-B31-T0-R1\nsyd20-c1-b31-t0-r1-compute1-wic1 [4]1 (port1)\nSYD20-C1-B31-T0-R1-COMPUTE1-WIC1"
     )
     
     if st.button("Test Sort Keys", key="sortkey_tester"):
