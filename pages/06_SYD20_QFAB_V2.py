@@ -754,7 +754,12 @@ if st.button("🧪 Test: Force write one error row to local log"):
         print(f"Current working dir : {os.getcwd()}")
         print("==========================================\n")
 
-        log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
+        # Smart path: use Desktop if it exists (local Windows/Mac), otherwise fall back to ./data/ (for Streamlit Cloud / containers)
+        if desktop.exists():
+            log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
+        else:
+            log_path = Path("data") / "QFAB_Error_Log_TEST.xlsx"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
 
         st.write("**Attempting to write to:**")
         st.code(str(log_path))
