@@ -12,8 +12,6 @@ import warnings
 from openpyxl import load_workbook
 import xlsxwriter
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -109,16 +107,100 @@ def classify_internal_cables(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 
 # =============================================================================
-# CPU Parallelism Helpers
+# SORT KEY LOGIC (migrated from Desktop work + 04 generator)
 # =============================================================================
 
-def _prepare_cable_group(args):
-    """Worker function for multiprocessing. Prepares one cable type group."""
-    ct, group_df, skip_heavy = args
-    # Here we can do any heavy per-group processing in parallel
-    # (e.g. complex formatting decisions, calculations, etc.)
-    # For now we just return the group ready for writing
-    return ct, group_df, skip_heavy
+import re
+
+def make_sort_key(text: str) -> str:
+    """
+    Generates a consistent, zero-padded sort key from device names or PP labels.
+    This is the migrated logic from the user's sortkey development work.
+    """
+    if not text or not isinstance(text, str):
+        return ''
+
+    s = text.strip()
+
+    # === Case 1: Patch Panel labels (PP:...) ===
+    if s.upper().startswith('PP:'):
+        parts = s.split('.')
+        try:
+            site = parts[0].replace('PP:', '').upper()
+            room = f'{int(parts[1]):02d}'
+            dh = parts[2].upper()
+            if dh.startswith('DH') and dh[2:].isdigit():
+                dh = f'DH{int(dh[2:]):02d}'
+
+            rest = '.'.join(parts[3:])
+            tokens = re.split(r'([RUru])', rest)
+            out = []
+            for t in tokens:
+                t = t.strip()
+                if not t: continue
+                if t[0].upper() in 'RU':
+                    letter = t[0].upper()
+                    num = re.search(r'\d+', t)
+                    num = f'{int(num.group()):03d}' if num else '000'
+                    out.append(f'{letter}{num}')
+                else:
+                    m = re.match(r'([A-Za-z]+)(\d+)', t)
+                    if m:
+                        let = m.group(1).upper()
+                        num = f'{int(m.group(2)):03d}'
+                        out.append(f'{let}{num}')
+                    else:
+                        out.append(t.upper())
+            return f'{site}|{room}|{dh}|' + '|'.join(out)
+        except Exception:
+            return s
+
+    # === Case 2: Device / hostname style ===
+    lower = s.lower()
+    if 'syd20' in lower or re.search(r'b\d+', lower):
+        try:
+            b = re.search(r'b(\d+)', lower)
+            t = re.search(r't(\d+)', lower)
+            r = re.search(r'r(\d+)', lower)
+            port = re.search(r'(?:et-|ethernet|port)[-/]?(\d+)', lower, re.I)
+
+            b_str = f'B{int(b.group(1)):02d}' if b else ''
+            t_str = f'T{int(t.group(1)):02d}' if t else 'T00'
+            r_str = f'R{int(r.group(1)):03d}' if r else ''
+            port_num = f'PORT{int(port.group(1)):03d}' if port else ''
+
+            return f'SYD20|{b_str}|{t_str}|{r_str}|{port_num}'.strip('|')
+        except Exception:
+            pass
+
+    return s.upper()[:60]
+
+
+def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """Adds SortA and SortB columns using make_sort_key."""
+    df = df.copy()
+
+    possible_a = ['DeviceA Name', 'Device A Name', 'Source Device Name']
+    possible_b = ['DeviceB Name', 'Device B Name', 'Remote Device Name']
+
+    pp_cols = [c for c in df.columns if 'patch' in c.lower() or 'full label' in c.lower() or 'easymark' in c.lower()]
+
+    col_a = next((c for c in possible_a if c in df.columns), None)
+    col_b = next((c for c in possible_b if c in df.columns), None)
+
+    if col_a:
+        df['SortA'] = df[col_a].apply(make_sort_key)
+    else:
+        df['SortA'] = ''
+
+    if col_b:
+        df['SortB'] = df[col_b].apply(make_sort_key)
+    elif pp_cols:
+        df['SortB'] = df[pp_cols[0]].apply(make_sort_key)
+    else:
+        df['SortB'] = ''
+
+    return df
 
 
 def preprocess_and_filter_connections(df: pd.DataFrame, filters: dict = None) -> pd.DataFrame:
@@ -611,6 +693,17 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
             ws.set_column(5, 5, 22)
             ws.set_column(6, 6, 30)
 
+            # Sort keys on the far right (same as full mode)
+            sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+            sort_start_col = 21
+            if sort_key_cols:
+                sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
+                for idx, colname in enumerate(sort_key_cols):
+                    cidx = sort_start_col + idx
+                    ws.set_column(cidx, cidx, 34)
+                    header_name = 'SortA (Device Side)' if colname == 'SortA' else 'SortB (Path / Far End)'
+                    ws.write(0, cidx, header_name, sort_hdr)
+
             for i, rv in enumerate(grp.itertuples(index=False), 1):
                 v = list(rv)
                 da = fmt_d(v[DA_NAME], v[DA_PORT])
@@ -625,6 +718,13 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 ws.write(i, 4, db, f['tab'])
                 ws.write(i, 5, rb, f['tab'])
                 ws.write(i, 6, '', f['note'])
+
+                # Write sort keys on the right
+                if sort_key_cols:
+                    for idx, colname in enumerate(sort_key_cols):
+                        cidx = sort_start_col + idx
+                        val = v[ALL_COLS.index(colname)] if colname in ALL_COLS else ''
+                        ws.write(i, cidx, val, dat_l)
         else:
             # Full complex version
             ws.set_row(0, 15)
@@ -634,6 +734,17 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 else:
                     ws.write(0, ci, h, hf)
             for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
+
+            # Sort key headers on the right
+            sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+            sort_start_col = 21
+            if sort_key_cols:
+                sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
+                for idx, colname in enumerate(sort_key_cols):
+                    cidx = sort_start_col + idx
+                    ws.set_column(cidx, cidx, 34)
+                    header_name = 'SortA (Device Side)' if colname == 'SortA' else 'SortB (Path / Far End)'
+                    ws.write(0, cidx, header_name, sort_hdr)
             for i, rv in enumerate(grp.itertuples(index=False), 1):
                 v = list(rv)
                 da = fmt_d(v[DA_NAME], v[DA_PORT])
@@ -656,6 +767,15 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 ws.write_blank(i, 12, None, f['tab'])
                 ws.write_blank(i, 13, None, f['tab'])
                 ws.write(i, 14, '', f['note'])
+
+                # === Sort Keys on the far right (starting at column V = 21) ===
+                sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+                sort_start_col = 21
+                if sort_key_cols:
+                    for idx, colname in enumerate(sort_key_cols):
+                        cidx = sort_start_col + idx
+                        val = v[ALL_COLS.index(colname)] if colname in ALL_COLS else ''
+                        ws.write(i, cidx, val, dat_l)
 
     wb.close()
     output.seek(0)
@@ -693,6 +813,12 @@ with st.form("options_form"):
     )
     aux_racks = {r.strip() for r in aux_racks_input.split(",") if r.strip()}
 
+    add_sort_keys_option = st.checkbox(
+        "Add Sort Keys on the right side (SortA / SortB columns)",
+        value=True,
+        help="Adds physical sort keys starting at column V. Uses the migrated make_sort_key logic from your Desktop work."
+    )
+
     exclude_done = st.checkbox(
         "Also try to exclude rows using status/keyword columns (legacy)",
         value=False,
@@ -704,12 +830,6 @@ with st.form("options_form"):
         "Skip heavy progress sheets (much faster)",
         value=True,
         help="Skips the big 'Template' sheet and some progress tracking. Recommended for large files."
-    )
-
-    use_multiprocessing = st.checkbox(
-        "Use all CPU cores (experimental - faster on large files with many cable types)",
-        value=True,
-        help="Uses multiple CPU cores for data preparation and grouping. Writing to Excel remains single-threaded."
     )
 
     submitted = st.form_submit_button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_file)
@@ -739,7 +859,7 @@ if submitted:
                 'auxiliary_racks': aux_racks,
                 'exclude_already_connected': exclude_done,
                 'skip_heavy_progress': skip_heavy_progress,
-                'use_multiprocessing': use_multiprocessing,
+                'add_sort_keys': add_sort_keys_option,
             }
 
             # === Filtering ===
@@ -757,6 +877,11 @@ if submitted:
 
             df_all = df_filtered.sort_values('Cable Info').reset_index(drop=True)
 
+            # --- NEW: Apply sort keys if requested ---
+            if filters.get('add_sort_keys'):
+                df_all = add_sort_keys(df_all)
+                st.info("Sort keys generated and will be placed on the far right of each tab (starting column V).")
+
             # Give the user visible progress so it doesn't feel stuck
             if filters.get('skip_heavy_progress'):
                 st.write("Generating **lite version** (fewer formulas, simpler tabs)...")
@@ -766,16 +891,6 @@ if submitted:
             st.write("Preparing data for per-cable tabs...")
 
             df_all = df_all.sort_values('Cable Info').reset_index(drop=True)
-
-            # --- Parallel CPU usage for data preparation (when enabled) ---
-            use_mp = filters.get('use_multiprocessing', False)
-            if use_mp and len(cable_types_preview) > 1:
-                st.write(f"Using {min(multiprocessing.cpu_count(), len(cable_types_preview))} CPU cores for parallel data preparation...")
-                tasks = [(ct, df_all[df_all['Cable Info'] == ct], filters.get('skip_heavy_progress', False)) 
-                         for ct in cable_types_preview]
-                with ProcessPoolExecutor(max_workers=min(multiprocessing.cpu_count(), len(tasks))) as executor:
-                    list(executor.map(_prepare_cable_group, tasks))  # runs the prep in parallel
-                st.write("Data preparation complete. Now writing Excel file...")
 
             if mode == "Single cutsheet":
                 bytes_data = build_workbook_to_bytes(df_all, skip_heavy_progress=filters.get('skip_heavy_progress', False))
