@@ -22,32 +22,29 @@ st.markdown("""
     .main-header {
         font-size: 2.4rem;
         font-weight: 700;
-        color: #0f172a;
         margin-bottom: 0.1rem;
     }
     .sub-header {
         font-size: 1.05rem;
-        color: #475569;
         margin-bottom: 1.8rem;
     }
     .section-header {
         font-size: 1.35rem;
         font-weight: 600;
-        color: #1e2937;
         margin-top: 1.8rem;
         margin-bottom: 0.6rem;
     }
     .kpi-card {
-        background: white;
+        background: var(--secondary-background-color, white);
         border-radius: 16px;
         padding: 1.2rem 1.4rem;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--border-color, #e2e8f0);
     }
     .metric-value {
         font-size: 1.9rem;
         font-weight: 700;
-        color: #0f172a;
+        color: inherit;
     }
 </style>
 """, unsafe_allow_html=True)
