@@ -17,6 +17,9 @@ from collections import Counter
 
 import pandas as pd
 import streamlit as st
+
+from utils.auth import require_login
+require_login()
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter

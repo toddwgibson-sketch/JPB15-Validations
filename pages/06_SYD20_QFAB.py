@@ -1,4 +1,7 @@
 import streamlit as st
+
+from utils.auth import require_login
+require_login()
 import pandas as pd
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side

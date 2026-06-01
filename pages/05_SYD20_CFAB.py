@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
+
+from utils.auth import require_login
+require_login()
 from openpyxl.styles import PatternFill, Border, Side, Font
 from openpyxl.utils import get_column_letter
 from copy import copy

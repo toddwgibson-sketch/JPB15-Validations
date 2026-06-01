@@ -13,6 +13,9 @@ from pathlib import Path
 import tempfile
 import os
 
+from utils.auth import require_login
+require_login()
+
 # Add parent directory so we can import the logic
 sys.path.append(str(Path(__file__).parent.parent))
 

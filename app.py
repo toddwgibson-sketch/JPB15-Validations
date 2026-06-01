@@ -8,38 +8,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====================== BASIC AUTH ======================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
-def login_form():
-    st.title("🔐 Login")
-    st.markdown("Please log in to access the tools.")
-
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Login")
-
-        if submitted:
-            if username == "admin" and password == "admin":
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
-
-# If not logged in, show login and stop the app
-if not st.session_state.authenticated:
-    login_form()
-    st.stop()
-
-# If we reach here, the user is logged in
-with st.sidebar:
-    st.success("Logged in as **admin**")
-    if st.button("Logout"):
-        st.session_state.authenticated = False
-        st.rerun()
-# =========================================================
+# ====================== SITE-WIDE AUTH ======================
+from utils.auth import require_login
+require_login()
+# ==========================================================
 
 # ── Header ───────────────────────────────────────────────────────────────────
 def show_header(title: str, subtitle: str = ""):
