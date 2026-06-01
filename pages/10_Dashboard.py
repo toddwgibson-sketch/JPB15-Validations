@@ -21,7 +21,7 @@ st.markdown("""
 <style>
     .stApp .main-header,
     .main-header {
-        font-size: 4.5rem !important;
+        font-size: 3.5rem !important;
         font-weight: 700;
         margin-bottom: 0.1rem;
         line-height: 1.1;
@@ -51,8 +51,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<p class="main-header">📊 Validation Error Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Executive View • Cross-Hall • Real-time Error Intelligence</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-header">Dashboard</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Executive View</p>', unsafe_allow_html=True)
 
 # ====================== DATA ======================
 DATA_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
