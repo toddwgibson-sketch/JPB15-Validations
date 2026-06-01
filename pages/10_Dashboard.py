@@ -80,7 +80,7 @@ if df.empty:
 def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Return only the most recent row for each (hall, building, error_category).
     This makes the dashboard show *current* issues instead of accumulating history.
-    Re-running the same racks will overwrite the previous numbers for those buildings.
+    Re-running the same blocks will overwrite the previous numbers for those blocks.
     """
     if dataframe.empty:
         return dataframe
@@ -124,8 +124,8 @@ filtered = df[
     (df['rack_type'].isin(selected_types))
 ]
 
-# Current snapshot only (latest entry per building + category).
-# This is what powers the main views so re-running the same racks overwrites old numbers.
+# Current snapshot only (latest entry per block + category).
+# This is what powers the main views so re-running the same blocks overwrites old numbers.
 current = get_latest_snapshot(filtered)
 
 # ====================== EXECUTIVE KPI CARDS ======================
@@ -141,7 +141,7 @@ avg_errors_per_rack = round(total_errors / unique_racks, 1) if unique_racks > 0 
 with col1:
     st.metric("Total Errors Logged", f"{total_errors:,}")
 with col2:
-    st.metric("Unique Racks/Bldgs", unique_racks)
+    st.metric("Unique Blocks", unique_racks)
 with col3:
     st.metric("Halls Active", active_halls)
 with col4:
@@ -150,7 +150,7 @@ with col4:
 st.divider()
 
 # ====================== ERROR BREAKDOWN BY BUILDING (widget cards) ======================
-st.markdown('<div class="section-header">Error Breakdown by Building</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Error Breakdown by Block</div>', unsafe_allow_html=True)
 
 # Nice consistent colors for the 4 categories (widget style)
 CAT_COLORS = {
@@ -186,7 +186,7 @@ if not current.empty:
 
                 # Card container (widget style)
                 with st.container(border=True):
-                    # Building header + total (compact)
+                    # Block header + total (compact)
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{bldg_total}</div>", unsafe_allow_html=True)
 
@@ -240,12 +240,12 @@ if not current.empty:
                         )
                     st.markdown("</div>", unsafe_allow_html=True)
 else:
-    st.info("No building data available yet.")
+    st.info("No block data available yet.")
 
 st.divider()
 
 # ====================== CATEGORY × BUILDING PIVOT (what you asked for) ======================
-st.markdown('<div class="section-header">Errors by Category × Building</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Errors by Category × Block</div>', unsafe_allow_html=True)
 
 if not current.empty:
     # Create the clean pivot exactly like the summary you export from QFAB
@@ -295,7 +295,7 @@ if not current.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("No current data after applying latest-per-building logic.")
+    st.info("No current data after applying latest-per-block logic.")
 
 st.divider()
 
