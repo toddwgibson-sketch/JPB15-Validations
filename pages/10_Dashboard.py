@@ -49,7 +49,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<p class="main-header">📊 Validation Error Dashboard</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-header">Dashboard</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Executive View • Cross-Hall • Real-time Error Intelligence</p>', unsafe_allow_html=True)
 
 # ====================== DATA ======================
