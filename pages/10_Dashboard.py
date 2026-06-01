@@ -134,36 +134,87 @@ with col4:
 
 st.divider()
 
-# ====================== ERROR BREAKDOWN BY BUILDING (card view) ======================
+# ====================== ERROR BREAKDOWN BY BUILDING (widget cards) ======================
 st.markdown('<div class="section-header">Error Breakdown by Building</div>', unsafe_allow_html=True)
+
+# Nice consistent colors for the 4 categories (widget style)
+CAT_COLORS = {
+    "Downlink": "#e74c3c",
+    "Mismatch": "#f39c12",
+    "optics": "#3498db",
+    "fec_ber": "#9b59b6"
+}
+CAT_LABELS = {
+    "Downlink": "Downlink",
+    "Mismatch": "Mismatch",
+    "optics": "Optics",
+    "fec_ber": "FEC BER"
+}
 
 if not filtered.empty:
     building_order = sorted(filtered['building'].unique())
     num_bldgs = len(building_order)
     cols = st.columns(num_bldgs) if num_bldgs > 0 else [st.container()]
 
-    # Consistent category order + nice labels
-    category_order = ["Downlink", "Mismatch", "optics", "fec_ber"]
-    cat_label = {
-        "Downlink": "Downlink",
-        "Mismatch": "Mismatch",
-        "optics": "Optics",
-        "fec_ber": "FEC BER"
-    }
+    category_order = list(CAT_LABELS.keys())
 
     for i, bldg in enumerate(building_order):
         with cols[i]:
             bldg_df = filtered[filtered['building'] == bldg]
             cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
 
-            st.markdown(f"**{bldg}**")
-            bldg_total = sum(cat_counts.values())
-            st.caption(f"**Total errors in {bldg}: {int(bldg_total)}**")
+            bldg_total = int(sum(cat_counts.values()))
 
-            for cat in category_order:
-                label = cat_label.get(cat, cat)
-                val = int(cat_counts.get(cat, 0))
-                st.metric(label, val)
+            # Card container
+            with st.container(border=True):
+                # Building header + total (compact)
+                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{bldg_total}</div>", unsafe_allow_html=True)
+
+                # Mini horizontal stacked bar showing the split
+                bar_data = []
+                for cat in category_order:
+                    val = int(cat_counts.get(cat, 0))
+                    if val > 0:
+                        bar_data.append({
+                            "Category": CAT_LABELS[cat],
+                            "Count": val,
+                            "Color": CAT_COLORS[cat]
+                        })
+
+                if bar_data:
+                    bar_df = pd.DataFrame(bar_data)
+                    fig = px.bar(
+                        bar_df,
+                        x="Count",
+                        y=[""] * len(bar_df),   # single row for horizontal look
+                        color="Category",
+                        orientation="h",
+                        color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
+                        height=48
+                    )
+                    fig.update_layout(
+                        barmode="stack",
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        xaxis_visible=False,
+                        yaxis_visible=False,
+                        showlegend=False,
+                        height=48
+                    )
+                    fig.update_traces(marker_line_width=0)
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+                # Compact category list with small font
+                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
+                for cat in category_order:
+                    label = CAT_LABELS[cat]
+                    val = int(cat_counts.get(cat, 0))
+                    color = CAT_COLORS[cat]
+                    st.markdown(
+                        f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>",
+                        unsafe_allow_html=True
+                    )
+                st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("No building data available yet.")
 
