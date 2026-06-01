@@ -72,7 +72,11 @@ def load_data():
 df = load_data()
 
 if df.empty:
+    abs_path = DATA_FILE.resolve()
     st.warning("No error data logged yet. Process validation files using the tools in this app to populate this dashboard.")
+    st.info("The central error log lives here (inside your GitHub repo):")
+    st.code(str(abs_path))
+    st.caption("Click the test button on the SYD20 QFAB page (or any other validation page) to create the first rows.")
     st.stop()
 
 # ====================== FILTERS ======================

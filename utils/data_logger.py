@@ -25,12 +25,17 @@ import shutil
 from pathlib import Path
 
 # Central log file location (relative to repo root)
+# This is the single source of truth for all validation error logging.
 LOG_FILE = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
+
+def _get_abs_log_path():
+    """Always return the absolute, resolved path for diagnostics."""
+    return LOG_FILE.resolve()
 
 def ensure_log_exists():
     """Create the log file with proper columns if it doesn't exist."""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    abs_path = LOG_FILE.resolve()
+    abs_path = _get_abs_log_path()
     
     if not LOG_FILE.exists():
         from openpyxl import Workbook
@@ -42,7 +47,9 @@ def ensure_log_exists():
         ws.append(headers)
         wb.save(LOG_FILE)
         wb.close()
-        print(f"Created new error log at: {abs_path}")
+        print(f"[DATA_LOGGER] Created new error log at: {abs_path}")
+    else:
+        print(f"[DATA_LOGGER] Using existing error log at: {abs_path}")
 
 def log_errors(
     hall: str,
@@ -67,17 +74,11 @@ def log_errors(
     """
     ensure_log_exists()
     
-    new_row = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "hall": hall,
-        "rack_type": rack_type,
-        "building": building,
-        "error_category": error_category,
-        "count": count,
-        "source_file": source_file,
-        "processed_by": processed_by
-    }
+    abs_path = _get_abs_log_path()
     
+    print(f"[DATA_LOGGER] Attempting to log: hall={hall}, rack_type={rack_type}, building={building}, category={error_category}, count={count}")
+    print(f"[DATA_LOGGER] Target file (absolute): {abs_path}")
+
     # Reliable append using openpyxl with retries (Windows-friendly)
     from openpyxl import load_workbook, Workbook
 
@@ -109,7 +110,7 @@ def log_errors(
             ])
 
             wb.save(LOG_FILE)
-            print(f"Logged error → {LOG_FILE}")
+            print(f"[DATA_LOGGER] ✅ SUCCESS - Logged to: {abs_path}")
             return True
 
         except PermissionError:
@@ -118,7 +119,7 @@ def log_errors(
                     wb.close()
                 except:
                     pass
-            print(f"Log file locked, retrying... ({attempt + 1}/{max_retries})")
+            print(f"[DATA_LOGGER] Log file locked, retrying... ({attempt + 1}/{max_retries})")
             time.sleep(0.8 * (attempt + 1))  # increasing backoff
 
         except Exception as e:
@@ -127,10 +128,10 @@ def log_errors(
                     wb.close()
                 except:
                     pass
-            print(f"Failed to write to error log: {e}")
+            print(f"[DATA_LOGGER] Failed to write to error log: {e}")
             return False
 
-    print("Failed to write to error log after multiple retries (file probably locked by Excel).")
+    print("[DATA_LOGGER] ❌ Failed after multiple retries (file probably locked by Excel).")
     return False
 
 def get_error_log():

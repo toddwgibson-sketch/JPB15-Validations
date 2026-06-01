@@ -26,6 +26,13 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
+# --- Auth + Central Logging (GitHub repo data folder) ---
+from utils.auth import require_login
+from utils.data_logger import log_errors
+
+if not require_login():
+    st.stop()
+
 # ================== Styles & Constants ==================
 YELLOW_FILL = PatternFill("solid", start_color="FFFF00")
 PINK_FILL = PatternFill("solid", start_color="FFC0CB")
@@ -683,6 +690,66 @@ input_files = st.file_uploader(
     key="inputs_v2"
 )
 
+# ================== CENTRAL LOGGING TEST (GitHub data folder) ==================
+st.markdown("---")
+st.markdown("### 🧪 Test: Write to GitHub Repo Error Log")
+
+st.info("This writes directly to the central log inside the JPB15-Validations repo (`data/validation_error_log.xlsx`). The Dashboard reads from the exact same file.")
+
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🧪 Test: Log 5 sample errors to GitHub data folder", key="github_log_test"):
+        try:
+            # Use the central logger - this is the real one used by Dashboard
+            success1 = log_errors(
+                hall="SYD20",
+                rack_type="QFAB",
+                building="TEST-B52",
+                error_category="Downlink",
+                count=5,
+                source_file="manual_test_button",
+                processed_by="test"
+            )
+            success2 = log_errors(
+                hall="SYD20",
+                rack_type="QFAB",
+                building="TEST-B53",
+                error_category="Mismatch",
+                count=3,
+                source_file="manual_test_button",
+                processed_by="test"
+            )
+            success3 = log_errors(
+                hall="SYD20",
+                rack_type="QFAB",
+                building="TEST-B54",
+                error_category="Optics",
+                count=2,
+                source_file="manual_test_button",
+                processed_by="test"
+            )
+
+            if success1 or success2 or success3:
+                st.success("✅ Logged test rows to the GitHub repo data folder!")
+                st.markdown("**Open this file in Excel to verify:**")
+                from pathlib import Path
+                log_path = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
+                st.code(str(log_path.resolve()))
+                st.caption("Then go to the Dashboard page — the new rows should appear there (refresh if needed).")
+            else:
+                st.error("Logging returned False — check the terminal for [DATA_LOGGER] messages.")
+        except Exception as e:
+            st.error(f"Test logging failed: {e}")
+            st.exception(e)
+
+with col2:
+    st.markdown("**How to see the file:**")
+    st.markdown("1. In File Explorer go to:  \n`C:\\Users\\toddy\\Documents\\GitHub\\JPB15-Validations\\data\\`")
+    st.markdown("2. Open `validation_error_log.xlsx`")
+    st.markdown("3. The Dashboard page reads the same file automatically.")
+
+st.markdown("---")
+
 if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files)):
     with st.spinner("Processing with the full updated logic..."):
         try:
@@ -727,6 +794,50 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                     import pandas as pd
                     df_counts = pd.DataFrame(list(tab_counts.items()), columns=["Tab", "Rows"])
                     st.bar_chart(df_counts.set_index("Tab"))
+
+                # ====================== CENTRAL ERROR LOGGING ======================
+                # Log the real per-category counts to the GitHub repo data folder
+                # so the Dashboard can aggregate them across all tools.
+                try:
+                    if "summary" in wb_preview.sheetnames:
+                        ws_sum = wb_preview["summary"]
+                        summary_rows = list(ws_sum.iter_rows(min_row=2, values_only=True))
+                        
+                        # labels were built earlier in process_files from the input filenames
+                        # We re-derive building labels here for logging
+                        labels_for_log = []
+                        for f in input_files:
+                            m = re.search(r"b(\d+)", f.name, re.IGNORECASE)
+                            labels_for_log.append(f"B{m.group(1)}" if m else Path(f.name).stem)
+
+                        logged_any = False
+                        for row in summary_rows:
+                            if not row or not row[0]:
+                                continue
+                            category = str(row[0])
+                            for idx, bldg in enumerate(labels_for_log):
+                                if idx + 1 < len(row):
+                                    val = row[idx + 1]
+                                    if val is not None:
+                                        try:
+                                            count = int(val)
+                                        except (ValueError, TypeError):
+                                            count = 0
+                                        if count > 0:
+                                            log_errors(
+                                                hall="SYD20",
+                                                rack_type="QFAB",
+                                                building=bldg,
+                                                error_category=category,
+                                                count=count,
+                                                source_file=filename,
+                                                processed_by="QFAB_V2"
+                                            )
+                                            logged_any = True
+                        if logged_any:
+                            st.caption("📝 Errors from this run were logged to the central GitHub data folder (visible on Dashboard).")
+                except Exception as log_exc:
+                    st.warning(f"Could not log to central error log: {log_exc}")
 
                 # ====================== DOWNLOAD ======================
                 st.download_button(
