@@ -205,7 +205,7 @@ with st.expander("📍 Where is the dashboard data stored? (Click to expand)", e
                 data=f,
                 file_name="validation_error_log.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
     else:
         st.warning("Log file does not exist in this environment yet.")
@@ -290,8 +290,9 @@ if not current.empty:
 
                     total_str = str(bldg_total)
                     if total_delta is not None:
-                        delta_sign = f"({total_delta:+d})" if total_delta != 0 else ""
-                        delta_color = "green" if total_delta < 0 else "red"
+                        delta_int = int(total_delta)
+                        delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
+                        delta_color = "green" if delta_int < 0 else "red"
                         total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
                     st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{total_str}</div>", unsafe_allow_html=True)
 
@@ -328,7 +329,7 @@ if not current.empty:
                         fig.update_traces(marker_line_width=0)
                         st.plotly_chart(
                             fig, 
-                            use_container_width=True, 
+                            width="stretch", 
                             key=f"bldg_bar_{bldg}",
                             config={"displayModeBar": False}
                         )
@@ -343,8 +344,9 @@ if not current.empty:
 
                         delta_html = ""
                         if d is not None:
-                            delta_color = "green" if d < 0 else "red"
-                            delta_str = f"({d:+d})"
+                            d_int = int(d)
+                            delta_color = "green" if d_int < 0 else "red"
+                            delta_str = f"({d_int:+d})"
                             delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
 
                         st.markdown(
@@ -378,7 +380,7 @@ if not current.empty:
 
     st.dataframe(
         pivot,
-        use_container_width=True,
+        width="stretch",
         column_config={
             col: st.column_config.NumberColumn(col, format="%d") 
             for col in pivot.columns
@@ -406,7 +408,7 @@ if not current.empty:
         xaxis_title=None,
         yaxis_title="Number of Errors"
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 else:
     st.info("No current data after applying latest-per-block logic.")
 
@@ -417,7 +419,7 @@ st.markdown('<div class="section-header">Detailed Error Log</div>', unsafe_allow
 
 st.dataframe(
     filtered.sort_values('timestamp', ascending=False),
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "timestamp": st.column_config.DatetimeColumn("Timestamp"),
@@ -431,7 +433,7 @@ st.divider()
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    if st.button("📥 Export Executive Report (Excel)", use_container_width=True, type="primary"):
+    if st.button("📥 Export Executive Report (Excel)", width="stretch", type="primary"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             # Summary sheet (current snapshot only)
@@ -454,7 +456,7 @@ with col1:
             data=buffer,
             file_name=f"Validation_Errors_Executive_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            width="stretch"
         )
 
 st.caption("Errors are logged automatically from the validation tools. Data source: data/validation_error_log.xlsx inside the repo.")
