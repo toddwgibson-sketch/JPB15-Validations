@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 
 st.set_page_config(page_title=" SYD20 Cutsheet Formatter", page_icon="📋", layout="wide")
 st.title("SYD20 Cutsheet Formatter")
-st.caption("Might need to cache this script, its huge and runs the server out of memory")
+st.caption("Now with Internal Cable Classification + better large-file handling")
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
 COLOR_RJ45        = '#FFCCCC'
@@ -131,10 +131,209 @@ def assign_connections_to_rooms(df, row_to_room):
             room_idx[room].add(i)
     return {room: sorted(idxs) for room, idxs in room_idx.items()}
 
+
+# =============================================================================
+# NEW ADVANCED FEATURES (ported & adapted from V2)
+# =============================================================================
+
+def normalize_rack(rack_str: str) -> str:
+    """Extracts the base rack identifier for comparison (e.g. 2706 from 'Rack 2706 U41')."""
+    if not rack_str:
+        return ""
+    s = str(rack_str).strip().lower().replace("rack", "").strip()
+    import re
+    match = re.search(r'(\d+)', s)
+    return match.group(1) if match else s
+
+
+def is_intra_rack(row, rack_a_col: str, rack_b_col: str) -> bool:
+    """Returns True if both sides are on the same physical rack."""
+    ra = normalize_rack(row.get(rack_a_col, ""))
+    rb = normalize_rack(row.get(rack_b_col, ""))
+    return bool(ra) and bool(rb) and ra == rb
+
+
+def has_uleft_or_uright(rack_str: str) -> bool:
+    if not rack_str:
+        return False
+    s = str(rack_str).lower()
+    return "uleft" in s or "uright" in s
+
+
+def classify_internal_cables(df: pd.DataFrame, auxiliary_racks: set = None) -> pd.DataFrame:
+    """
+    Adds 'Is_Internal' column.
+    Internal = same physical rack on both sides (already installed, no pulling needed).
+    Exceptions:
+      - Rack B has Uleft / Uright → still needs work
+      - Rack is in auxiliary_racks list → treat as external
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df['Is_Internal'] = False
+
+    rack_cols = [c for c in df.columns if 'rack' in c.lower()]
+    rack_a_col = next((c for c in rack_cols if 'a' in c.lower()), None)
+    rack_b_col = next((c for c in rack_cols if 'b' in c.lower()), None)
+
+    if not rack_a_col or not rack_b_col:
+        return df
+
+    aux = auxiliary_racks or set()
+
+    internal_mask = df.apply(
+        lambda row: is_intra_rack(row, rack_a_col, rack_b_col), axis=1
+    )
+
+    for idx in df[internal_mask].index:
+        rack_b = str(df.at[idx, rack_b_col]).lower()
+        rack_a_norm = normalize_rack(df.at[idx, rack_a_col])
+
+        if has_uleft_or_uright(rack_b):
+            df.at[idx, 'Is_Internal'] = False
+            continue
+        if rack_a_norm in aux:
+            df.at[idx, 'Is_Internal'] = False
+            continue
+
+        df.at[idx, 'Is_Internal'] = True
+
+    return df
+
+
+# =============================================================================
+# SORT KEY LOGIC (migrated from Desktop SYD20\\Cutsheets work)
+# =============================================================================
+
+import re
+
+def make_sort_key(text: str) -> str:
+    """
+    Generates a consistent, zero-padded sort key from device names or PP labels.
+    This is the migrated logic from the user's sortkey development work.
+
+    Examples:
+      'syd20-c1-b70-t0-r9 Ethernet1/1'          -> 'SYD20|B70|T00|R009|PORT001'
+      'PP:SYD20.3.DH8.R2302.U1.A1.P4'           -> 'SYD20|03|DH08|R2302|U001|A01|P004'
+      'PP:SYD20.3.DH8.R2801.U12.S7.A4'          -> 'SYD20|03|DH08|R2801|U012|S07|A004'
+    """
+    if not text or not isinstance(text, str):
+        return ''
+
+    s = text.strip()
+
+    # === Case 1: Patch Panel labels (PP:...) ===
+    if s.upper().startswith('PP:'):
+        # PP:SYD20.3.DH8.R2302.U1.A1.P4
+        # -> SYD20|03|DH08|R2302|U001|A01|P004
+        parts = s.split('.')
+        try:
+            site = parts[0].replace('PP:', '').upper()          # SYD20
+            room = f'{int(parts[1]):02d}'                       # 03
+            dh   = parts[2].upper()                             # DH8 -> DH08
+            if dh.startswith('DH') and dh[2:].isdigit():
+                dh = f'DH{int(dh[2:]):02d}'
+
+            rest = '.'.join(parts[3:])                          # R2302.U1.A1.P4
+
+            # Normalize the rest (R, U, then letters + numbers)
+            # Split on common separators while keeping structure
+            tokens = re.split(r'([RUru])', rest)
+            out = []
+            for t in tokens:
+                t = t.strip()
+                if not t: continue
+                if t[0].upper() in 'RU':
+                    letter = t[0].upper()
+                    num = re.search(r'\d+', t)
+                    num = f'{int(num.group()):03d}' if num else '000'
+                    out.append(f'{letter}{num}')
+                else:
+                    # Handle things like A1, P4, S7, A10 etc.
+                    m = re.match(r'([A-Za-z]+)(\d+)', t)
+                    if m:
+                        let = m.group(1).upper()
+                        num = f'{int(m.group(2)):03d}'
+                        out.append(f'{let}{num}')
+                    else:
+                        out.append(t.upper())
+            return f'{site}|{room}|{dh}|' + '|'.join(out)
+        except Exception:
+            return s  # fallback
+
+    # === Case 2: Device / hostname style ===
+    # syd20-c1-b70-t0-r9 et-0/0/12
+    # syd20-c1-b12-t2-r8 Ethernet1/1
+    lower = s.lower()
+    if 'syd20' in lower or re.search(r'b\d+', lower):
+        try:
+            b = re.search(r'b(\d+)', lower)
+            t = re.search(r't(\d+)', lower)
+            r = re.search(r'r(\d+)', lower)
+            port = re.search(r'(?:et-|ethernet|port)[-/]?(\d+)', lower, re.I)
+
+            b_str = f'B{int(b.group(1)):02d}' if b else ''
+            t_str = f'T{int(t.group(1)):02d}' if t else 'T00'
+            r_str = f'R{int(r.group(1)):03d}' if r else ''
+
+            port_num = f'PORT{int(port.group(1)):03d}' if port else ''
+
+            return f'SYD20|{b_str}|{t_str}|{r_str}|{port_num}'.strip('|')
+        except Exception:
+            pass
+
+    # Fallback: return uppercased original
+    return s.upper()[:60]
+
+
+def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds SortA and SortB columns using the migrated make_sort_key logic.
+    Tries to find the best source columns for each side.
+    """
+    df = df.copy()
+
+    # Common column name patterns in allconnects exports
+    possible_a = ['DeviceA Name', 'Device A Name', 'Source Device Name', 'Hostname A']
+    possible_b = ['DeviceB Name', 'Device B Name', 'Remote Device Name', 'Hostname B']
+
+    # Also try patch panel columns for the far side (often richer)
+    pp_cols = [c for c in df.columns if 'patch' in c.lower() or 'full label' in c.lower() or 'easymark' in c.lower()]
+
+    col_a = next((c for c in possible_a if c in df.columns), None)
+    col_b = next((c for c in possible_b if c in df.columns), None)
+
+    if col_a:
+        df['SortA'] = df[col_a].apply(make_sort_key)
+    else:
+        df['SortA'] = ''
+
+    if col_b:
+        df['SortB'] = df[col_b].apply(make_sort_key)
+    elif pp_cols:
+        # Use first good PP column as SortB source if no DeviceB name
+        df['SortB'] = df[pp_cols[0]].apply(make_sort_key)
+    else:
+        df['SortB'] = ''
+
+    return df
+
 # ── Main workbook builder (kept from original) ────────────────────────────────
 def build_workbook_to_bytes(df, title_label=""):
     """Builds the cutsheet workbook and returns it as bytes (for Streamlit download)."""
-    cable_types = list(df['Cable Info'].unique())
+    # Support for internal cable classification (new feature)
+    if 'Is_Internal' in df.columns:
+        def get_tab_key(row):
+            base = row['Cable Info']
+            return f"{base} (Internal)" if row.get('Is_Internal', False) else base
+        df = df.copy()
+        df['_Tab_Key'] = df.apply(get_tab_key, axis=1)
+        cable_types = list(df['_Tab_Key'].unique())
+    else:
+        cable_types = list(df['Cable Info'].unique())
+
     if not cable_types:
         return None
 
@@ -155,7 +354,11 @@ def build_workbook_to_bytes(df, title_label=""):
         ct_tab_names[ct] = n
 
     output = io.BytesIO()
-    wb = xlsxwriter.Workbook(output, {'strings_to_numbers': False})
+    # constant_memory=True is critical for large files (prevents OOM on big exports)
+    wb = xlsxwriter.Workbook(output, {
+        'strings_to_numbers': False,
+        'constant_memory': True
+    })
 
     def mk(bg=None, fc=BLACK, bold=False, wrap=False,
            halign='left', valign='vcenter', sz=10, num_fmt=None):
@@ -390,6 +593,18 @@ def build_workbook_to_bytes(df, title_label=""):
             else:
                 ws.write(0, ci, h, hf)
         for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
+
+        # === Sort Keys on the far right (starting at column V = 21) ===
+        sort_key_cols = [c for c in ['SortA', 'SortB'] if c in grp.columns]
+        sort_start_col = 21  # Column V
+        if sort_key_cols:
+            sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
+            for idx, colname in enumerate(sort_key_cols):
+                cidx = sort_start_col + idx
+                ws.set_column(cidx, cidx, 34)
+                header_name = 'Sort - Device A' if colname == 'SortA' else 'Sort - Device B / Path'
+                ws.write(0, cidx, header_name, sort_hdr)
+
         for i, rv in enumerate(grp.itertuples(index=False), 1):
             v = list(rv)
             da = fmt_d(v[DA_NAME], v[DA_PORT])
@@ -413,6 +628,13 @@ def build_workbook_to_bytes(df, title_label=""):
             ws.write_blank(i, 13, None, f['tab'])
             ws.write(i, 14, '', f['note'])
 
+            # Write sort keys far to the right
+            if sort_key_cols:
+                for idx, colname in enumerate(sort_key_cols):
+                    cidx = sort_start_col + idx
+                    val = v[ALL_COLS.index(colname)] if colname in ALL_COLS else ''
+                    ws.write(i, cidx, val, dat_l)
+
     wb.close()
     output.seek(0)
     return output.getvalue()
@@ -428,6 +650,28 @@ mode = st.radio(
 
 input_file = st.file_uploader("All Connects export (.xlsx)", type=["xlsx"])
 
+# ── NEW: Advanced Options (more features) ─────────────────────────────────────
+with st.expander("⚙️ Advanced Options (New Features)", expanded=False):
+    st.markdown("**Internal Cable Classification** (highly recommended for construction)")
+    classify_internals = st.checkbox(
+        "Classify intra-rack (internal) cables",
+        value=True,
+        help="Cables with the same rack on both sides are marked as 'Internal' (already installed). Creates separate tabs like 'Copper RJ45 cable (Internal)'."
+    )
+
+    aux_racks_input = st.text_input(
+        "Auxiliary racks (comma separated, e.g. 5920,6002)",
+        value="",
+        help="Racks that should never be treated as internal even if RackA == RackB."
+    )
+    auxiliary_racks = {r.strip() for r in aux_racks_input.split(",") if r.strip()} if aux_racks_input else set()
+
+    add_sort_keys_option = st.checkbox(
+        "Add Sort Keys (SortA / SortB columns)",
+        value=True,
+        help="Generates physical sort keys from device names and PP labels (migrated from your Desktop sortkey work). Greatly improves sort order in the final cutsheet."
+    )
+
 breakdown_file = None
 if mode == "Split by room (requires Row Breakdown)":
     breakdown_file = st.file_uploader("Row Breakdown file (.xlsx)", type=["xlsx"])
@@ -440,6 +684,17 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
             df_all = df_all.sort_values('Cable Info').reset_index(drop=True)
             st.success(f"Loaded {len(df_all):,} connections")
 
+            # ── NEW: Apply advanced preprocessing if enabled ─────────────────────
+            if classify_internals:
+                df_all = classify_internal_cables(df_all, auxiliary_racks)
+                internal_count = int(df_all.get('Is_Internal', pd.Series([False]*len(df_all))).sum())
+                if internal_count > 0:
+                    st.info(f"Classified **{internal_count}** cables as Internal (same rack both sides). They will appear in separate '(Internal)' tabs.")
+
+            if add_sort_keys_option:
+                df_all = add_sort_keys(df_all)
+                st.info("SortA and SortB columns generated using migrated sortkey logic.")
+
             if mode == "Single cutsheet":
                 bytes_data = build_workbook_to_bytes(df_all)
                 if bytes_data:
@@ -448,7 +703,7 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
                         data=bytes_data,
                         file_name="cutsheet_formatted.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        width="stretch"
                     )
                 else:
                     st.error("No data to process.")
@@ -485,7 +740,7 @@ if st.button("🚀 Generate Cutsheet(s)", type="primary", disabled=not input_fil
                         data=zip_buffer,
                         file_name="room_cutsheets.zip",
                         mime="application/zip",
-                        use_container_width=True
+                        width="stretch"
                     )
 
         except Exception as e:
