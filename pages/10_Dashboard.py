@@ -116,6 +116,10 @@ def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
             previous = None
             delta = None
 
+        # Ensure delta is never NaN
+        if pd.isna(delta):
+            delta = None
+
         records.append({
             'hall': hall,
             'building': bldg,
@@ -281,7 +285,9 @@ if not current.empty:
                     cat_delta[cat] = row['delta']
 
                 bldg_total = sum(cat_current.values())
-                total_delta = sum(d for d in cat_delta.values() if d is not None)
+
+                valid_deltas = [d for d in cat_delta.values() if pd.notna(d)]
+                total_delta = sum(valid_deltas) if valid_deltas else None
 
                 # Card container (widget style)
                 with st.container(border=True):
@@ -289,7 +295,7 @@ if not current.empty:
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
 
                     total_str = str(bldg_total)
-                    if total_delta is not None:
+                    if pd.notna(total_delta):
                         delta_int = int(total_delta)
                         delta_sign = f"({delta_int:+d})" if delta_int != 0 else ""
                         delta_color = "green" if delta_int < 0 else "red"
@@ -343,7 +349,7 @@ if not current.empty:
                         color = CAT_COLORS[cat]
 
                         delta_html = ""
-                        if d is not None:
+                        if pd.notna(d):
                             d_int = int(d)
                             delta_color = "green" if d_int < 0 else "red"
                             delta_str = f"({d_int:+d})"
