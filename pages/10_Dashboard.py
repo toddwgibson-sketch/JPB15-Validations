@@ -79,6 +79,20 @@ if df.empty:
     st.caption("Run any validation tool (e.g. SYD20 QFAB). Errors are logged automatically to this file.")
     st.stop()
 
+
+def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Return only the most recent row for each (hall, building, error_category).
+    This makes the dashboard show *current* issues instead of accumulating history.
+    Re-running the same racks will overwrite the previous numbers for those buildings.
+    """
+    if dataframe.empty:
+        return dataframe
+    return (
+        dataframe.sort_values('timestamp')
+        .groupby(['hall', 'building', 'error_category'], as_index=False)
+        .last()
+    )
+
 # ====================== FILTERS ======================
 st.sidebar.header("Filters")
 
@@ -113,14 +127,18 @@ filtered = df[
     (df['rack_type'].isin(selected_types))
 ]
 
+# Current snapshot only (latest entry per building + category).
+# This is what powers the main views so re-running the same racks overwrites old numbers.
+current = get_latest_snapshot(filtered)
+
 # ====================== EXECUTIVE KPI CARDS ======================
 st.markdown('<div class="section-header">Executive Snapshot</div>', unsafe_allow_html=True)
 
 col1, col2, col3, col4 = st.columns(4)
 
-total_errors = int(filtered['count'].sum())
-unique_racks = filtered['building'].nunique()
-active_halls = filtered['hall'].nunique()
+total_errors = int(current['count'].sum())
+unique_racks = current['building'].nunique()
+active_halls = current['hall'].nunique()
 avg_errors_per_rack = round(total_errors / unique_racks, 1) if unique_racks > 0 else 0
 
 with col1:
@@ -151,8 +169,8 @@ CAT_LABELS = {
     "fec_ber": "FEC BER"
 }
 
-if not filtered.empty:
-    building_order = sorted(filtered['building'].unique())
+if not current.empty:
+    building_order = sorted(current['building'].unique())
     num_bldgs = len(building_order)
     cols = st.columns(num_bldgs) if num_bldgs > 0 else [st.container()]
 
@@ -160,7 +178,7 @@ if not filtered.empty:
 
     for i, bldg in enumerate(building_order):
         with cols[i]:
-            bldg_df = filtered[filtered['building'] == bldg]
+            bldg_df = current[current['building'] == bldg]
             cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
 
             bldg_total = int(sum(cat_counts.values()))
@@ -225,8 +243,8 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("**Errors by Hall**")
-    if not filtered.empty:
-        hall_sum = filtered.groupby('hall')['count'].sum().reset_index()
+    if not current.empty:
+        hall_sum = current.groupby('hall')['count'].sum().reset_index()
         fig_hall = px.bar(hall_sum, x='hall', y='count', color='hall',
                           color_discrete_sequence=px.colors.qualitative.Pastel,
                           text='count')
@@ -237,8 +255,8 @@ with col1:
 
 with col2:
     st.markdown("**Errors by Rack Type**")
-    if not filtered.empty:
-        type_sum = filtered.groupby('rack_type')['count'].sum().reset_index()
+    if not current.empty:
+        type_sum = current.groupby('rack_type')['count'].sum().reset_index()
         fig_type = px.pie(type_sum, names='rack_type', values='count', hole=0.5,
                           color_discrete_sequence=px.colors.qualitative.Set3)
         fig_type.update_layout(height=280, margin=dict(t=10, b=10))
@@ -251,10 +269,10 @@ st.divider()
 # ====================== CATEGORY × BUILDING PIVOT (what you asked for) ======================
 st.markdown('<div class="section-header">Errors by Category × Building</div>', unsafe_allow_html=True)
 
-if not filtered.empty:
+if not current.empty:
     # Create the clean pivot exactly like the summary you export from QFAB
     pivot = (
-        filtered.pivot_table(
+        current.pivot_table(
             index="error_category",
             columns="building",
             values="count",
@@ -299,16 +317,16 @@ if not filtered.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.info("No data in current filter.")
+    st.info("No current data after applying latest-per-building logic.")
 
 st.divider()
 
 # ====================== TOP PROBLEMATIC RACKS ======================
 st.markdown('<div class="section-header">Top Problematic Racks / Buildings</div>', unsafe_allow_html=True)
 
-if not filtered.empty:
+if not current.empty:
     rack_summary = (
-        filtered.groupby(['building', 'hall', 'rack_type'])['count']
+        current.groupby(['building', 'hall', 'rack_type'])['count']
         .sum()
         .reset_index()
         .sort_values('count', ascending=False)
@@ -362,8 +380,8 @@ with col1:
     if st.button("📥 Export Executive Report (Excel)", use_container_width=True, type="primary"):
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Summary sheet
-            summary = filtered.groupby(['hall', 'rack_type', 'building'])['count'].sum().reset_index()
+            # Summary sheet (current snapshot only)
+            summary = current.groupby(['hall', 'rack_type', 'building'])['count'].sum().reset_index()
             summary.to_excel(writer, index=False, sheet_name="By Rack & Hall")
             
             # Full log
