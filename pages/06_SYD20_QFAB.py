@@ -391,10 +391,9 @@ def build_summary(wb, labels, cat_to_tabs):
     ws.append(["Category"] + list(labels) + ["Total"])
     for cat, tabs in cat_to_tabs:
         c = count_sources(tabs)
-        row_idx = ws.max_row + 1
-        last_col = get_column_letter(1 + len(labels))
-        ws.append([cat] + [c.get(l, 0) for l in labels]
-                  + [f"=SUM(B{row_idx}:{last_col}{row_idx})"])
+        row_values = [cat] + [c.get(l, 0) for l in labels]
+        total = sum(row_values[1:])
+        ws.append(row_values + [total])
     return ws
 
 # ─────────────────────────────────────────────────────── Main pipeline ───────
