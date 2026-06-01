@@ -754,15 +754,17 @@ if st.button("🧪 Test: Force write one error row to local log"):
         print(f"Current working dir : {os.getcwd()}")
         print("==========================================\n")
 
-        # Smart path: use Desktop if it exists (local Windows/Mac), otherwise fall back to ./data/ (for Streamlit Cloud / containers)
-        if desktop.exists():
-            log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
-        else:
-            log_path = Path("data") / "QFAB_Error_Log_TEST.xlsx"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Always write the test log next to this script in a "data" folder
+        # This is the most reliable location when developing locally
+        log_path = Path(__file__).parent.resolve() / "data" / "QFAB_Error_Log_TEST.xlsx"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        st.write("**Attempting to write to:**")
+        print(f"\n[TEST BUTTON] Final resolved log path: {log_path}")
+        print(f"[TEST BUTTON] Does parent folder exist? {log_path.parent.exists()}")
+
+        st.write("**Attempting to write to (absolute path):**")
         st.code(str(log_path))
+        st.info("Please check this exact path in File Explorer after clicking.")
 
         test_row = pd.DataFrame([{
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -782,10 +784,13 @@ if st.button("🧪 Test: Force write one error row to local log"):
 
         combined.to_excel(log_path, index=False)
 
-        if log_path.exists():
-            st.success(f"✅ SUCCESS! File exists at: {log_path}")
-            st.code(str(log_path), language="text")
-            print(f"[TEST] SUCCESS - File exists at: {log_path}")
+        # Always show the full absolute path
+        abs_log_path = log_path.resolve()
+
+        if abs_log_path.exists():
+            st.success(f"✅ SUCCESS! File exists at: {abs_log_path}")
+            st.code(str(abs_log_path), language="text")
+            print(f"[TEST] SUCCESS - File exists at: {abs_log_path}")
         else:
             st.error("File was supposedly written but does not exist on disk.")
             print("[TEST] ERROR - File does not exist after write attempt.")
