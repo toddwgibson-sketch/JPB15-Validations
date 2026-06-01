@@ -134,6 +134,41 @@ with col4:
 
 st.divider()
 
+# ====================== ERROR BREAKDOWN BY BUILDING (card view) ======================
+st.markdown('<div class="section-header">Error Breakdown by Building</div>', unsafe_allow_html=True)
+
+if not filtered.empty:
+    building_order = sorted(filtered['building'].unique())
+    num_bldgs = len(building_order)
+    cols = st.columns(num_bldgs) if num_bldgs > 0 else [st.container()]
+
+    # Consistent category order + nice labels
+    category_order = ["Downlink", "Mismatch", "optics", "fec_ber"]
+    cat_label = {
+        "Downlink": "Downlink",
+        "Mismatch": "Mismatch",
+        "optics": "Optics",
+        "fec_ber": "FEC BER"
+    }
+
+    for i, bldg in enumerate(building_order):
+        with cols[i]:
+            bldg_df = filtered[filtered['building'] == bldg]
+            cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
+
+            st.markdown(f"**{bldg}**")
+            bldg_total = sum(cat_counts.values())
+            st.caption(f"**Total errors in {bldg}: {int(bldg_total)}**")
+
+            for cat in category_order:
+                label = cat_label.get(cat, cat)
+                val = int(cat_counts.get(cat, 0))
+                st.metric(label, val)
+else:
+    st.info("No building data available yet.")
+
+st.divider()
+
 # ====================== QUICK BREAKDOWNS ======================
 col1, col2 = st.columns(2)
 
