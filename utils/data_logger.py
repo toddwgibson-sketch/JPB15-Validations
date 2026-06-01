@@ -34,8 +34,13 @@ def _get_abs_log_path():
 
 def ensure_log_exists():
     """Create the log file with proper columns if it doesn't exist."""
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data_dir = LOG_FILE.parent
+    data_dir.mkdir(parents=True, exist_ok=True)
+    
+    abs_dir = data_dir.resolve()
     abs_path = _get_abs_log_path()
+    
+    print(f"[DATA_LOGGER] Ensuring data folder exists: {abs_dir}")
     
     if not LOG_FILE.exists():
         from openpyxl import Workbook
@@ -47,7 +52,7 @@ def ensure_log_exists():
         ws.append(headers)
         wb.save(LOG_FILE)
         wb.close()
-        print(f"[DATA_LOGGER] Created new error log at: {abs_path}")
+        print(f"[DATA_LOGGER] ✅ Created data folder + new error log at: {abs_path}")
     else:
         print(f"[DATA_LOGGER] Using existing error log at: {abs_path}")
 

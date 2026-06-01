@@ -76,7 +76,15 @@ if df.empty:
     st.warning("No error data logged yet. Process validation files using the tools in this app to populate this dashboard.")
     st.info("The central error log lives here (inside your GitHub repo):")
     st.code(str(abs_path))
-    st.caption("Click the test button on the SYD20 QFAB page (or any other validation page) to create the first rows.")
+    st.markdown("""
+**The `data/` folder may be missing on first clone** (Git doesn't track empty folders).
+
+Go to the **SYD20 QFAB** page and click the button:
+
+> **📁 Force-create the GitHub data/ folder now (if missing)**
+
+Then use the test logging button on the same page. This page will then show data.
+""")
     st.stop()
 
 # ====================== FILTERS ======================

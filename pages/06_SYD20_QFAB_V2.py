@@ -696,6 +696,19 @@ st.markdown("### 🧪 Test: Write to GitHub Repo Error Log")
 
 st.info("This writes directly to the central log inside the JPB15-Validations repo (`data/validation_error_log.xlsx`). The Dashboard reads from the exact same file.")
 
+# Dedicated folder creation button so users can see the data/ folder appear
+if st.button("📁 Force-create the GitHub data/ folder now (if missing)", key="force_create_data_folder"):
+    from pathlib import Path
+    data_dir = Path(__file__).parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    gitkeep = data_dir / ".gitkeep"
+    if not gitkeep.exists():
+        gitkeep.touch()
+    abs_data = data_dir.resolve()
+    st.success(f"✅ data/ folder is ready at: {abs_data}")
+    st.code(str(abs_data))
+    st.caption("You should now see the 'data' folder inside JPB15-Validations in File Explorer. It contains .gitkeep so Git will keep it.")
+
 col1, col2 = st.columns(2)
 with col1:
     if st.button("🧪 Test: Log 5 sample errors to GitHub data folder", key="github_log_test"):
