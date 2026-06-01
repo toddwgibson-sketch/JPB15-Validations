@@ -161,26 +161,70 @@ def merge_columns(headers, rows):
 
 
 def sort_mismatch_pairs(headers, rows):
-    h_i = headers.index("Hostname Interface")
-    eh_i = headers.index("Expected Hostname Exp. Interface")
+    """Group rows that are connected via Expected<->Active swaps into clusters.
+    Cluster 1 → orange, Cluster 2 → yellow, Cluster 3 → orange, ... (alternating).
+    Unpaired rows (no match) are moved to the end with no highlight.
+    Returns (new_rows, row_colors) where row_colors is a dict {0-based index: fill}.
+    """
+    from collections import defaultdict
 
-    pair_map = {}
-    for idx, r in enumerate(rows):
-        key = frozenset([r[h_i], r[eh_i]])
-        pair_map.setdefault(key, []).append(idx)
+    exp_i = headers.index("Expected Hostname Exp. Interface")
+    act_i = headers.index("Active Host Act. Interface")
 
+    # Build adjacency: row i <-> row j if rows[i][exp] == rows[j][act] or vice versa
+    act_to_idxs = defaultdict(list)
+    for i, r in enumerate(rows):
+        v = r[act_i]
+        if v:
+            act_to_idxs[v].append(i)
+
+    adj = defaultdict(set)
+    for i, r in enumerate(rows):
+        exp_val = r[exp_i]
+        if exp_val and exp_val in act_to_idxs:
+            for j in act_to_idxs[exp_val]:
+                if j != i:
+                    adj[i].add(j)
+                    adj[j].add(i)
+
+    # Find connected components
+    visited = set()
+    groups = []
+    for start in range(len(rows)):
+        if start in visited or start not in adj:
+            continue
+        group = []
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            if n in visited:
+                continue
+            visited.add(n)
+            group.append(n)
+            stack.extend(adj[n] - visited)
+        groups.append(sorted(group))
+
+    # Unpaired rows (not in any group)
+    grouped_idxs = {i for g in groups for i in g}
+    unpaired = [i for i in range(len(rows)) if i not in grouped_idxs]
+
+    # Assign alternating colors: group 1=orange, group 2=yellow, group 3=orange ...
+    group_color = []
+    for gi, group in enumerate(groups):
+        group_color.append(ORANGE_FILL if gi % 2 == 0 else YELLOW_FILL)
+
+    # Build new row order: all grouped rows first (in group order), then unpaired
     new_rows = []
     row_colors = {}
-    cluster = 0
-    for key, indices in pair_map.items():
-        if len(indices) == 1:
-            new_rows.append(rows[indices[0]])
-            continue
-        color = ORANGE_FILL if cluster % 2 == 0 else YELLOW_FILL
-        for i in indices:
-            new_rows.append(rows[i])
-            row_colors[len(new_rows) - 1] = color
-        cluster += 1
+    for gi, group in enumerate(groups):
+        fill = group_color[gi]
+        for orig_idx in group:
+            row_colors[len(new_rows)] = fill
+            new_rows.append(rows[orig_idx])
+
+    for orig_idx in unpaired:
+        new_rows.append(rows[orig_idx])
+
     return new_rows, row_colors
 
 
