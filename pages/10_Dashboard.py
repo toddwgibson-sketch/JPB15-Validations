@@ -171,68 +171,77 @@ CAT_LABELS = {
 
 if not current.empty:
     building_order = sorted(current['building'].unique())
-    num_bldgs = len(building_order)
-    cols = st.columns(num_bldgs) if num_bldgs > 0 else [st.container()]
+    CARDS_PER_ROW = 5   # Adjust this if you want 4 or 6 per row
 
     category_order = list(CAT_LABELS.keys())
 
-    for i, bldg in enumerate(building_order):
-        with cols[i]:
-            bldg_df = current[current['building'] == bldg]
-            cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
+    # Build grid: 5 cards per row, then wrap to next row
+    for start_idx in range(0, len(building_order), CARDS_PER_ROW):
+        row_buildings = building_order[start_idx : start_idx + CARDS_PER_ROW]
+        cols = st.columns(CARDS_PER_ROW)
 
-            bldg_total = int(sum(cat_counts.values()))
+        for i, bldg in enumerate(row_buildings):
+            with cols[i]:
+                bldg_df = current[current['building'] == bldg]
+                cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
 
-            # Card container
-            with st.container(border=True):
-                # Building header + total (compact)
-                st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{bldg_total}</div>", unsafe_allow_html=True)
+                bldg_total = int(sum(cat_counts.values()))
 
-                # Mini horizontal stacked bar showing the split
-                bar_data = []
-                for cat in category_order:
-                    val = int(cat_counts.get(cat, 0))
-                    if val > 0:
-                        bar_data.append({
-                            "Category": CAT_LABELS[cat],
-                            "Count": val,
-                            "Color": CAT_COLORS[cat]
-                        })
+                # Card container (widget style)
+                with st.container(border=True):
+                    # Building header + total (compact)
+                    st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{bldg_total}</div>", unsafe_allow_html=True)
 
-                if bar_data:
-                    bar_df = pd.DataFrame(bar_data)
-                    fig = px.bar(
-                        bar_df,
-                        x="Count",
-                        y=[""] * len(bar_df),   # single row for horizontal look
-                        color="Category",
-                        orientation="h",
-                        color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
-                        height=48
-                    )
-                    fig.update_layout(
-                        barmode="stack",
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        xaxis_visible=False,
-                        yaxis_visible=False,
-                        showlegend=False,
-                        height=48
-                    )
-                    fig.update_traces(marker_line_width=0)
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    # Mini horizontal stacked bar showing the split
+                    bar_data = []
+                    for cat in category_order:
+                        val = int(cat_counts.get(cat, 0))
+                        if val > 0:
+                            bar_data.append({
+                                "Category": CAT_LABELS[cat],
+                                "Count": val,
+                                "Color": CAT_COLORS[cat]
+                            })
 
-                # Compact category list with small font
-                st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
-                for cat in category_order:
-                    label = CAT_LABELS[cat]
-                    val = int(cat_counts.get(cat, 0))
-                    color = CAT_COLORS[cat]
-                    st.markdown(
-                        f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>",
-                        unsafe_allow_html=True
-                    )
-                st.markdown("</div>", unsafe_allow_html=True)
+                    if bar_data:
+                        bar_df = pd.DataFrame(bar_data)
+                        fig = px.bar(
+                            bar_df,
+                            x="Count",
+                            y=[""] * len(bar_df),
+                            color="Category",
+                            orientation="h",
+                            color_discrete_map={d["Category"]: d["Color"] for d in bar_data},
+                            height=48
+                        )
+                        fig.update_layout(
+                            barmode="stack",
+                            margin=dict(l=0, r=0, t=0, b=0),
+                            xaxis_visible=False,
+                            yaxis_visible=False,
+                            showlegend=False,
+                            height=48
+                        )
+                        fig.update_traces(marker_line_width=0)
+                        st.plotly_chart(
+                            fig, 
+                            use_container_width=True, 
+                            key=f"bldg_bar_{bldg}",           # ← unique key fixes the DuplicateElementId error
+                            config={"displayModeBar": False}
+                        )
+
+                    # Compact category list with small font
+                    st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
+                    for cat in category_order:
+                        label = CAT_LABELS[cat]
+                        val = int(cat_counts.get(cat, 0))
+                        color = CAT_COLORS[cat]
+                        st.markdown(
+                            f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>",
+                            unsafe_allow_html=True
+                        )
+                    st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("No building data available yet.")
 
