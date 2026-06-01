@@ -30,8 +30,7 @@ from pathlib import Path
 from utils.auth import require_login
 from utils.data_logger import log_errors
 
-if not require_login():
-    st.stop()
+require_login()  # This will show login form + stop if not authenticated. No return value.
 
 # ================== Styles & Constants ==================
 YELLOW_FILL = PatternFill("solid", start_color="FFFF00")
