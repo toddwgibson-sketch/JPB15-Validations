@@ -20,7 +20,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        font-size: 20rem;
+        font-size: 50rem;
         font-weight: 700;
         margin-bottom: 0.1rem;
     }
