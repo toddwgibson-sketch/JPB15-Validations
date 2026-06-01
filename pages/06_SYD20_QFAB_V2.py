@@ -513,9 +513,9 @@ def build_summary(wb, labels, cat_to_tabs):
     ws.append(["Category"] + list(labels) + ["Total"])
     for cat, tabs in cat_to_tabs:
         c = count_sources(tabs)
-        row_idx = ws.max_row + 1
-        last_col = get_column_letter(1 + len(labels))
-        ws.append([cat] + [c.get(l, 0) for l in labels] + [f"=SUM(B{row_idx}:{last_col}{row_idx})"])
+        row_values = [cat] + [c.get(l, 0) for l in labels]
+        total = sum(row_values[1:])  # compute actual number so preview + logging never see formula strings
+        ws.append(row_values + [total])
     return ws
 
 
@@ -754,17 +754,17 @@ if st.button("🧪 Test: Force write one error row to local log"):
         print(f"Current working dir : {os.getcwd()}")
         print("==========================================\n")
 
-        # Always write the test log next to this script in a "data" folder
-        # This is the most reliable location when developing locally
-        log_path = Path(__file__).parent.resolve() / "data" / "QFAB_Error_Log_TEST.xlsx"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Force target the real GitHub repo data folder (the long-term home for all logging)
+        github_data = Path(r"C:\Users\toddy\Documents\GitHub\JPB15-Validations\data")
+        github_data.mkdir(parents=True, exist_ok=True)
+        log_path = github_data / "QFAB_Error_Log_TEST.xlsx"
 
-        print(f"\n[TEST BUTTON] Final resolved log path: {log_path}")
-        print(f"[TEST BUTTON] Does parent folder exist? {log_path.parent.exists()}")
+        print(f"\n[TEST BUTTON] Forcing write to GitHub repo data folder:")
+        print(f"[TEST BUTTON] {log_path}")
 
-        st.write("**Attempting to write to (absolute path):**")
+        st.write("**Writing test file to GitHub repo data folder (the real target):**")
         st.code(str(log_path))
-        st.info("Please check this exact path in File Explorer after clicking.")
+        st.info("This is the same location the Dashboard and all official pages will use.")
 
         test_row = pd.DataFrame([{
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -898,10 +898,12 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                         print(f"Current working dir : {os.getcwd()}")
                         print("==========================================\n")
 
-                        # Try Desktop first
-                        log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
+                        # Force to the real GitHub repo data folder
+                        github_data = Path(r"C:\Users\toddy\Documents\GitHub\JPB15-Validations\data")
+                        github_data.mkdir(parents=True, exist_ok=True)
+                        log_path = github_data / "QFAB_Error_Log_TEST.xlsx"
 
-                        st.write("**Attempting to write to:**")
+                        st.write("**Writing to GitHub repo data folder:**")
                         st.code(str(log_path))
 
                         test_row = pd.DataFrame([{
