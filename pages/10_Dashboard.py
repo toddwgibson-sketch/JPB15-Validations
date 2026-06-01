@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-import os
+import io
 from pathlib import Path
 
 from utils.auth import require_login
@@ -76,15 +76,7 @@ if df.empty:
     st.warning("No error data logged yet. Process validation files using the tools in this app to populate this dashboard.")
     st.info("The central error log lives here (inside your GitHub repo):")
     st.code(str(abs_path))
-    st.markdown("""
-**The `data/` folder may be missing on first clone** (Git doesn't track empty folders).
-
-Go to the **SYD20 QFAB** page and click the button:
-
-> **📁 Force-create the GitHub data/ folder now (if missing)**
-
-Then use the test logging button on the same page. This page will then show data.
-""")
+    st.caption("Run any validation tool (e.g. SYD20 QFAB). Errors are logged automatically to this file.")
     st.stop()
 
 # ====================== FILTERS ======================
@@ -142,44 +134,125 @@ with col4:
 
 st.divider()
 
-# ====================== MAIN CHARTS ======================
-c1, c2 = st.columns(2)
+# ====================== QUICK BREAKDOWNS ======================
+col1, col2 = st.columns(2)
 
-with c1:
+with col1:
     st.markdown("**Errors by Hall**")
-    hall_sum = filtered.groupby('hall')['count'].sum().reset_index()
-    fig = px.bar(hall_sum, x='hall', y='count', color='hall', title=None)
-    fig.update_layout(showlegend=False, height=380)
-    st.plotly_chart(fig, use_container_width=True)
+    if not filtered.empty:
+        hall_sum = filtered.groupby('hall')['count'].sum().reset_index()
+        fig_hall = px.bar(hall_sum, x='hall', y='count', color='hall',
+                          color_discrete_sequence=px.colors.qualitative.Pastel,
+                          text='count')
+        fig_hall.update_layout(showlegend=False, height=280, margin=dict(t=10, b=10))
+        st.plotly_chart(fig_hall, use_container_width=True)
+    else:
+        st.info("No data")
 
-with c2:
+with col2:
     st.markdown("**Errors by Rack Type**")
-    type_sum = filtered.groupby('rack_type')['count'].sum().reset_index()
-    fig2 = px.pie(type_sum, names='rack_type', values='count', hole=0.45)
-    fig2.update_layout(height=380)
-    st.plotly_chart(fig2, use_container_width=True)
+    if not filtered.empty:
+        type_sum = filtered.groupby('rack_type')['count'].sum().reset_index()
+        fig_type = px.pie(type_sum, names='rack_type', values='count', hole=0.5,
+                          color_discrete_sequence=px.colors.qualitative.Set3)
+        fig_type.update_layout(height=280, margin=dict(t=10, b=10))
+        st.plotly_chart(fig_type, use_container_width=True)
+    else:
+        st.info("No data")
+
+st.divider()
+
+# ====================== CATEGORY × BUILDING PIVOT (what you asked for) ======================
+st.markdown('<div class="section-header">Errors by Category × Building</div>', unsafe_allow_html=True)
+
+if not filtered.empty:
+    # Create the clean pivot exactly like the summary you export from QFAB
+    pivot = (
+        filtered.pivot_table(
+            index="error_category",
+            columns="building",
+            values="count",
+            aggfunc="sum",
+            fill_value=0
+        )
+        .astype(int)
+    )
+    pivot["Total"] = pivot.sum(axis=1)
+    pivot = pivot.sort_values("Total", ascending=False)
+    pivot.loc["TOTAL"] = pivot.sum()
+
+    st.dataframe(
+        pivot,
+        use_container_width=True,
+        column_config={
+            col: st.column_config.NumberColumn(col, format="%d") 
+            for col in pivot.columns
+        }
+    )
+
+    # Nicer Plotly bar chart for category totals
+    cat_totals = pivot.drop("TOTAL")["Total"].reset_index()
+    cat_totals.columns = ["Category", "Errors"]
+
+    fig = px.bar(
+        cat_totals,
+        x="Category",
+        y="Errors",
+        title="Total Errors by Category",
+        color="Category",
+        color_discrete_sequence=px.colors.qualitative.Bold,
+        text="Errors"
+    )
+    fig.update_traces(textposition="outside", textfont_size=13)
+    fig.update_layout(
+        height=340,
+        showlegend=False,
+        margin=dict(t=40, b=20),
+        xaxis_title=None,
+        yaxis_title="Number of Errors"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No data in current filter.")
+
+st.divider()
 
 # ====================== TOP PROBLEMATIC RACKS ======================
-st.markdown('<div class="section-header">Top Problematic Racks</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Top Problematic Racks / Buildings</div>', unsafe_allow_html=True)
 
-rack_summary = (
-    filtered.groupby(['building', 'hall', 'rack_type'])['count']
-    .sum()
-    .reset_index()
-    .sort_values('count', ascending=False)
-    .head(12)
-)
+if not filtered.empty:
+    rack_summary = (
+        filtered.groupby(['building', 'hall', 'rack_type'])['count']
+        .sum()
+        .reset_index()
+        .sort_values('count', ascending=False)
+        .head(15)
+    )
 
-fig3 = px.bar(
-    rack_summary,
-    x='building',
-    y='count',
-    color='hall',
-    hover_data=['rack_type'],
-    title="Highest Error Racks (Last Period)"
-)
-fig3.update_layout(xaxis_tickangle=-35, height=420)
-st.plotly_chart(fig3, use_container_width=True)
+    fig_racks = px.bar(
+        rack_summary,
+        x='building',
+        y='count',
+        color='hall',
+        hover_data=['rack_type'],
+        title=None,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+        text='count'
+    )
+    fig_racks.update_traces(textposition="outside")
+    fig_racks.update_layout(
+        height=420,
+        xaxis_tickangle=-35,
+        margin=dict(t=20, b=40),
+        yaxis_title="Total Errors",
+        xaxis_title=None,
+        legend_title="Hall"
+    )
+    st.plotly_chart(fig_racks, use_container_width=True)
+else:
+    st.info("No data for top racks.")
+
+st.divider()
 
 # ====================== DETAILED TABLE ======================
 st.markdown('<div class="section-header">Detailed Error Log</div>', unsafe_allow_html=True)
@@ -226,4 +299,4 @@ with col1:
             use_container_width=True
         )
 
-st.caption("Data is automatically logged whenever processors run. This dashboard reads from `data/validation_error_log.xlsx`.")
+st.caption("Errors are logged automatically from the validation tools. Data source: data/validation_error_log.xlsx inside the repo.")

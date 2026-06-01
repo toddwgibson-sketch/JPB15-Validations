@@ -690,80 +690,7 @@ input_files = st.file_uploader(
     key="inputs_v2"
 )
 
-# ================== CENTRAL LOGGING TEST (GitHub data folder) ==================
-st.markdown("---")
-st.markdown("### 🧪 Test: Write to GitHub Repo Error Log")
-
-st.info("This writes directly to the central log inside the JPB15-Validations repo (`data/validation_error_log.xlsx`). The Dashboard reads from the exact same file.")
-
-# Dedicated folder creation button so users can see the data/ folder appear
-if st.button("📁 Force-create the GitHub data/ folder now (if missing)", key="force_create_data_folder"):
-    from pathlib import Path
-    data_dir = Path(__file__).parent.parent / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    gitkeep = data_dir / ".gitkeep"
-    if not gitkeep.exists():
-        gitkeep.touch()
-    abs_data = data_dir.resolve()
-    st.success(f"✅ data/ folder is ready at: {abs_data}")
-    st.code(str(abs_data))
-    st.caption("You should now see the 'data' folder inside JPB15-Validations in File Explorer. It contains .gitkeep so Git will keep it.")
-
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("🧪 Test: Log 5 sample errors to GitHub data folder", key="github_log_test"):
-        try:
-            # Use the central logger - this is the real one used by Dashboard
-            success1 = log_errors(
-                hall="SYD20",
-                rack_type="QFAB",
-                building="TEST-B52",
-                error_category="Downlink",
-                count=5,
-                source_file="manual_test_button",
-                processed_by="test"
-            )
-            success2 = log_errors(
-                hall="SYD20",
-                rack_type="QFAB",
-                building="TEST-B53",
-                error_category="Mismatch",
-                count=3,
-                source_file="manual_test_button",
-                processed_by="test"
-            )
-            success3 = log_errors(
-                hall="SYD20",
-                rack_type="QFAB",
-                building="TEST-B54",
-                error_category="Optics",
-                count=2,
-                source_file="manual_test_button",
-                processed_by="test"
-            )
-
-            if success1 or success2 or success3:
-                st.success("✅ Logged test rows to the GitHub repo data folder!")
-                st.markdown("**Open this file in Excel to verify:**")
-                from pathlib import Path
-                log_path = Path(__file__).parent.parent / "data" / "validation_error_log.xlsx"
-                st.code(str(log_path.resolve()))
-                st.caption("Then go to the Dashboard page — the new rows should appear there (refresh if needed).")
-            else:
-                st.error("Logging returned False — check the terminal for [DATA_LOGGER] messages.")
-        except Exception as e:
-            st.error(f"Test logging failed: {e}")
-            st.exception(e)
-
-with col2:
-    st.markdown("**How to see the file:**")
-    st.markdown("1. In File Explorer go to:  \n`C:\\Users\\toddy\\Documents\\GitHub\\JPB15-Validations\\data\\`")
-    st.markdown("2. Open `validation_error_log.xlsx`")
-    st.markdown("3. The Dashboard page reads the same file automatically.")
-
-st.markdown("---")
-
-if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files)):
+if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files), key="process_files_main"):
     with st.spinner("Processing with the full updated logic..."):
         try:
             result_bytes, filename = process_files(cutsheet_file.getvalue(), input_files)
@@ -809,25 +736,30 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                     st.bar_chart(df_counts.set_index("Tab"))
 
                 # ====================== CENTRAL ERROR LOGGING ======================
-                # Log the real per-category counts to the GitHub repo data folder
-                # so the Dashboard can aggregate them across all tools.
+                # Automatically log the exact numbers from the "summary" tab
+                # (Downlink / Mismatch / optics / fec_ber per building) so the
+                # Dashboard can track errors over time.
                 try:
                     if "summary" in wb_preview.sheetnames:
                         ws_sum = wb_preview["summary"]
                         summary_rows = list(ws_sum.iter_rows(min_row=2, values_only=True))
-                        
-                        # labels were built earlier in process_files from the input filenames
-                        # We re-derive building labels here for logging
+
+                        # Build building labels in the same order they appear in the summary
+                        # (this matches how build_summary creates the columns)
                         labels_for_log = []
                         for f in input_files:
                             m = re.search(r"b(\d+)", f.name, re.IGNORECASE)
                             labels_for_log.append(f"B{m.group(1)}" if m else Path(f.name).stem)
 
-                        logged_any = False
                         for row in summary_rows:
                             if not row or not row[0]:
                                 continue
-                            category = str(row[0])
+
+                            category = str(row[0]).strip()
+                            # Skip the TOTAL row if it ever appears in the data rows
+                            if category.upper() == "TOTAL":
+                                continue
+
                             for idx, bldg in enumerate(labels_for_log):
                                 if idx + 1 < len(row):
                                     val = row[idx + 1]
@@ -836,6 +768,7 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                                             count = int(val)
                                         except (ValueError, TypeError):
                                             count = 0
+
                                         if count > 0:
                                             log_errors(
                                                 hall="SYD20",
@@ -846,10 +779,8 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                                                 source_file=filename,
                                                 processed_by="QFAB_V2"
                                             )
-                                            logged_any = True
-                        if logged_any:
-                            st.caption("📝 Errors from this run were logged to the central GitHub data folder (visible on Dashboard).")
                 except Exception as log_exc:
+                    # Silent on success — only show a warning if logging actually failed
                     st.warning(f"Could not log to central error log: {log_exc}")
 
                 # ====================== DOWNLOAD ======================
@@ -858,7 +789,8 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                     data=result_bytes,
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="download_qfab_report"
                 )
         except Exception as e:
             st.error(f"Error during processing: {e}")
