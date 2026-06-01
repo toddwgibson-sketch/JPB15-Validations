@@ -125,6 +125,19 @@ def make_sort_key(txt: str) -> str:
     try:
         t = str(txt).strip().upper()
         res = ""
+
+        # Handle raw "Rack XXXX UYY" strings (e.g. from Rack A / Rack B columns)
+        # Produce "9803|0030" style so U position is included for proper sorting within rack
+        if "RACK" in t:
+            rack_m = re.search(r'(\d+)', t)
+            u_m = re.search(r'U\s*(\d+)', t)
+            if rack_m:
+                rack = rack_m.group(1)
+                if u_m:
+                    u = f"{int(u_m.group(1)):04d}"
+                    return f"{rack}|{u}"
+                return rack
+            return t
         
         # OHR
         if "OHR" in t:
@@ -195,18 +208,25 @@ def make_sort_key(txt: str) -> str:
             res = "SYD20"
             
             # Zone/qualifier: q2, c1, m1, block2, block30, etc.
-            if "-Q" in t:
+            # Only add zone if no -B (to match demo outputs where c1-bXX uses the b as the building)
+            has_b = "-B" in t
+            if "-Q" in t and not has_b:
                 q_pos = t.find("-Q")
                 res += f"|Q{int(t[q_pos+2:q_pos+4]):00}"
-            elif "-C" in t:
+            elif "-C" in t and not has_b:
                 c_pos = t.find("-C")
-                res += f"|C{int(t[c_pos+2:c_pos+4]):00}"
-            elif "-M" in t:
+                after = t[c_pos+2:]
+                digits = ''.join(ch for ch in after if ch.isdigit())
+                if digits:
+                    res += f"|C{int(digits):00}"
+            elif "-M" in t and not has_b:
                 m_pos = t.find("-M")
-                res += f"|M{int(t[m_pos+2:m_pos+4]):00}"
+                after = t[m_pos+2:]
+                digits = ''.join(ch for ch in after if ch.isdigit())
+                if digits:
+                    res += f"|M{int(digits):00}"
             elif "BLOCK" in t:
                 bm = t.find("BLOCK")
-                # Safer digit extraction after BLOCK
                 after = t[bm + 5:]
                 digits = ''.join(ch for ch in after if ch.isdigit())
                 if digits:
@@ -214,20 +234,20 @@ def make_sort_key(txt: str) -> str:
                 else:
                     res += "|BLOCK??"
             
-            # b-t-r
+            # b-t-r - use safe extraction to handle single digit followed by - (e.g. t0-r1)
             if "-B" in t:
-                b_pos = t.find("-B")
-                res += f"|B{int(t[b_pos+2:b_pos+4]):00}"
+                res += "|B" + f"{extract_number_after(t, '-B'):00}"
             if "-T" in t:
-                t_pos = t.find("-T")
-                res += f"|T{int(t[t_pos+2:t_pos+4]):00}"
+                res += "|T" + f"{extract_number_after(t, '-T'):00}"
             if "-R" in t:
-                r_pos = t.find("-R")
-                res += f"|R{int(t[r_pos+2:r_pos+5]):000}"
+                res += "|R" + f"{extract_number_after(t, '-R'):000}"
             
-            # Port extraction - covers almost everything
+            # Port extraction - include the FULL port hierarchy like "0/0/4" or "2/1"
+            # so sorting works by the actual ethernet port on the device
             p = ""
-            if "ETH" in t:
+            if "ETHERNET" in t:
+                p = t[t.find("ETHERNET") + 8:]
+            elif "ETH" in t:
                 p = t[t.find("ETH") + 3:]
             elif "ET-" in t:
                 p = t[t.find("ET-") + 3:]
@@ -236,21 +256,13 @@ def make_sort_key(txt: str) -> str:
             elif "COMP" in t:
                 p = t[t.find("COMP") + 4:]
             
-            port_found = False
-            for i in range(len(p)):
-                if p[i].isdigit():
-                    num = ""
-                    j = i
-                    while j < len(p) and p[j].isdigit():
-                        num += p[j]
-                        j += 1
-                    if num:
-                        res += f"|PORT{int(num):000}"
-                        port_found = True
-                        break
-            
-            # Last resort - grab last digits
-            if not port_found:
+            # Extract all number groups in order and pad each to 3 digits, join with |
+            nums = re.findall(r'\d+', p)
+            if nums:
+                port_part = '|'.join(f"{int(n):03d}" for n in nums)
+                res += f"|{port_part}"
+            else:
+                # fallback last 3 digits
                 last = t[-3:]
                 if last and last[-1].isdigit():
                     res += f"|PORT{int(last):000}"
@@ -810,26 +822,37 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         ws.set_tab_color(cable_hex[ct])
         ws.set_default_row(14.9)
         ws.freeze_panes(1, 0)
-        ws.autofilter(0, 0, 0, 14)
         last = 1 + len(grp)
+
+        is_internal_tab = "(Internal)" in sname
+
+        # Compute sort keys only for non-internal tabs
+        sort_key_cols = []
+        sort_start_col = 21
+        if not is_internal_tab:
+            sort_key_cols = get_sort_key_columns(grp)
+
+        # Remove column A (label) and B (cable type) - they are not useful on the tabs
+        new_tpl_hdrs = tpl_hdrs[2:]
+        new_col_w = COL_W[2:]
+        main_data_cols = len(new_tpl_hdrs)  # should be 13
+
+        ws.autofilter(0, 0, 0, main_data_cols - 1)
 
         if skip_heavy_progress:
             # Lite version: much simpler and faster to write
             ws.set_row(0, 15)
-            lite_headers = ['Label', 'Cable Type', 'Device A', 'Rack A', 'Device B', 'Rack B', 'Notes']
+            # Skip label and cable type, start with Device A etc.
+            lite_headers = ['Device A', 'Rack A', 'Device B', 'Rack B', 'Notes']
             for ci, h in enumerate(lite_headers):
                 ws.write(0, ci, h, hdr_blue)
-            ws.set_column(0, 0, 50)
-            ws.set_column(1, 1, 25)
+            ws.set_column(0, 0, 45)
+            ws.set_column(1, 1, 22)
             ws.set_column(2, 2, 45)
             ws.set_column(3, 3, 22)
-            ws.set_column(4, 4, 45)
-            ws.set_column(5, 5, 22)
-            ws.set_column(6, 6, 30)
+            ws.set_column(4, 4, 30)
 
-            # Sort keys on the far right (same as full mode)
-            sort_key_cols = get_sort_key_columns(grp)
-            sort_start_col = 21
+            # Sort keys on the far right - skip for internal tabs
             if sort_key_cols:
                 sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
                 for idx, colname in enumerate(sort_key_cols):
@@ -844,15 +867,14 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 db = fmt_d(v[DB_NAME], v[DB_PORT])
                 rb = fmt_r(v[DB_RACK], v[DB_RU])
                 ws.set_row(i, 15)
-                ws.write(i, 0, f"{da} | {ra}  →  {db} | {rb}", f['tab'])
-                ws.write(i, 1, ct, f['tab'])
-                ws.write(i, 2, da, f['tab'])
-                ws.write(i, 3, ra, f['tab'])
-                ws.write(i, 4, db, f['tab'])
-                ws.write(i, 5, rb, f['tab'])
-                ws.write(i, 6, '', f['note'])
+                # Write starting at col 0, skipping removed label/cable type
+                ws.write(i, 0, da, f['tab'])
+                ws.write(i, 1, ra, f['tab'])
+                ws.write(i, 2, db, f['tab'])
+                ws.write(i, 3, rb, f['tab'])
+                ws.write(i, 4, '', f['note'])
 
-                # Write sort keys on the right
+                # Write sort keys on the right (skip for internal)
                 if sort_key_cols:
                     for idx, colname in enumerate(sort_key_cols):
                         cidx = sort_start_col + idx
@@ -861,22 +883,22 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         else:
             # Full complex version
             ws.set_row(0, 15)
-            for ci, (h, hf) in enumerate(tpl_hdrs):
-                if ci == 13:
-                    ws.write_formula(0, ci, f'=AVERAGE(H2:L{last})', hdr_plain, 0)
+            for ci, (h, hf) in enumerate(new_tpl_hdrs):
+                if ci == 11:  # the blank col (was original 13)
+                    # average range shifted: original H(7)-L(11) now F(5)-J(9)
+                    ws.write_formula(0, ci, f'=AVERAGE(F2:J{last})', hdr_plain, 0)
                 else:
                     ws.write(0, ci, h, hf)
-            for ci, w in enumerate(COL_W): ws.set_column(ci, ci, w)
+            for ci, w in enumerate(new_col_w): ws.set_column(ci, ci, w)
 
-            # Sort key headers on the right
-            sort_key_cols = get_sort_key_columns(grp)
-            sort_start_col = 21
+            # Sort key headers on the right - skip for internal tabs
             if sort_key_cols:
                 sort_hdr = mk('#BDD7EE', BLACK, bold=True, halign='center')
                 for idx, colname in enumerate(sort_key_cols):
                     cidx = sort_start_col + idx
                     ws.set_column(cidx, cidx, 34)
                     ws.write(0, cidx, colname, sort_hdr)
+
             for i, rv in enumerate(grp.itertuples(index=False), 1):
                 v = list(rv)
                 da = fmt_d(v[DA_NAME], v[DA_PORT])
@@ -884,25 +906,22 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
                 db = fmt_d(v[DB_NAME], v[DB_PORT])
                 rb = fmt_r(v[DB_RACK], v[DB_RU])
                 ws.set_row(i, 15)
-                ws.write(i, 0, f"{da}\n{ra}\n{db}\n{rb}", hdr_blue)
-                ws.write(i, 1, 'A', f['tab'])
-                ws.write(i, 2, da, f['tab'])
-                ws.write(i, 3, ra, f['tab'])
-                ws.write(i, 4, db, f['tab'])
-                ws.write(i, 5, rb, f['tab'])
-                ws.write(i, 6, 1, f['num'])
+                # Write starting at col 0, skipping removed label (0) and cable type (1)
+                ws.write(i, 0, da, f['tab'])
+                ws.write(i, 1, ra, f['tab'])
+                ws.write(i, 2, db, f['tab'])
+                ws.write(i, 3, rb, f['tab'])
+                ws.write(i, 4, 1, f['num'])
+                ws.write(i, 5, 0, f['num'])
+                ws.write(i, 6, 0, f['num'])
                 ws.write(i, 7, 0, f['num'])
                 ws.write(i, 8, 0, f['num'])
                 ws.write(i, 9, 0, f['num'])
-                ws.write(i, 10, 0, f['num'])
-                ws.write(i, 11, 0, f['num'])
-                ws.write_blank(i, 12, None, f['tab'])
-                ws.write_blank(i, 13, None, f['tab'])
-                ws.write(i, 14, '', f['note'])
+                ws.write_blank(i, 10, None, f['tab'])
+                ws.write_blank(i, 11, None, f['tab'])
+                ws.write(i, 12, '', f['note'])
 
-                # === Sort Keys on the far right (starting at column V = 21) ===
-                sort_key_cols = get_sort_key_columns(grp)
-                sort_start_col = 21
+                # === Sort Keys on the far right - skip for internal tabs
                 if sort_key_cols:
                     for idx, colname in enumerate(sort_key_cols):
                         cidx = sort_start_col + idx
