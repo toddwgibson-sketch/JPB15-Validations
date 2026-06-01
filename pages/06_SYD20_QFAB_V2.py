@@ -633,6 +633,54 @@ def process_files(cutsheet_bytes, input_files):
         ("fec_ber",  ["T2-T1 fec_ber", "T1-T0 fec_ber"]),
     ])
 
+    # === Log errors locally for testing (simple & reliable) ===
+    print("\n--- Writing error summary to local log file ---")
+    try:
+        import pandas as pd
+        from datetime import datetime
+        from pathlib import Path
+
+        # Write next to this script for easy finding during testing
+        log_path = Path(__file__).parent / "QFAB_Error_Log.xlsx"
+
+        new_rows = []
+        if "summary" in wb.sheetnames:
+            ws_sum = wb["summary"]
+            for row in ws_sum.iter_rows(min_row=2, values_only=True):
+                if row and row[0]:
+                    category = str(row[0])
+                    for idx, bldg in enumerate(labels):
+                        if idx + 1 < len(row) and row[idx + 1]:
+                            count = int(row[idx + 1])
+                            if count > 0:
+                                new_rows.append({
+                                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "hall": "SYD20",
+                                    "rack_type": category,
+                                    "building": bldg,
+                                    "error_category": category,
+                                    "count": count,
+                                    "source_file": "-".join(labels) + "_QFAB_Updated.xlsx"
+                                })
+
+        if new_rows:
+            new_df = pd.DataFrame(new_rows)
+            if log_path.exists():
+                existing = pd.read_excel(log_path)
+                combined = pd.concat([existing, new_df], ignore_index=True)
+            else:
+                combined = new_df
+
+            combined.to_excel(log_path, index=False)
+            print(f"✅ Error log written to: {log_path}")
+        else:
+            print("No error rows to log.")
+
+    except Exception as log_err:
+        print(f"ERROR writing local error log: {log_err}")
+        import traceback
+        traceback.print_exc()
+
     # Reorder sheets
     canonical = ["summary", "T2-T1 Downlink", "T1-T0 Downlink",
                  "T2-T1 Mismatch", "T1-T0 Mismatch",
@@ -683,6 +731,67 @@ input_files = st.file_uploader(
     key="inputs_v2"
 )
 
+### 🧪 Testing Tools (Temporary - for debugging the log)
+st.markdown("**Use this button to test if error logging is working.** It will try to create a file called `QFAB_Error_Log_TEST.xlsx` on your Desktop and show you the exact path.")
+
+if st.button("🧪 Test: Force write one error row to local log"):
+    try:
+        import pandas as pd
+        from datetime import datetime
+        from pathlib import Path
+        import os
+
+        home = Path.home()
+        desktop = home / "Desktop"
+        script_dir = Path(__file__).parent.resolve()
+
+        print("\n========== LOGGING DIAGNOSTICS ==========")
+        print(f"Python __file__     : {__file__}")
+        print(f"Resolved script dir : {script_dir}")
+        print(f"Path.home()         : {home}")
+        print(f"Desktop path        : {desktop}")
+        print(f"Desktop exists?     : {desktop.exists()}")
+        print(f"Current working dir : {os.getcwd()}")
+        print("==========================================\n")
+
+        log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
+
+        st.write("**Attempting to write to:**")
+        st.code(str(log_path))
+
+        test_row = pd.DataFrame([{
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "hall": "SYD20",
+            "rack_type": "TEST",
+            "building": "TEST-BLDG",
+            "error_category": "TEST",
+            "count": 99,
+            "source_file": "manual_test"
+        }])
+
+        if log_path.exists():
+            existing = pd.read_excel(log_path)
+            combined = pd.concat([existing, test_row], ignore_index=True)
+        else:
+            combined = test_row
+
+        combined.to_excel(log_path, index=False)
+
+        if log_path.exists():
+            st.success(f"✅ SUCCESS! File exists at: {log_path}")
+            st.code(str(log_path), language="text")
+            print(f"[TEST] SUCCESS - File exists at: {log_path}")
+        else:
+            st.error("File was supposedly written but does not exist on disk.")
+            print("[TEST] ERROR - File does not exist after write attempt.")
+
+    except Exception as e:
+        st.error(f"Test log failed with exception: {e}")
+        print(f"[TEST] EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
+
+# --- Main Process Button ---
 if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files)):
     with st.spinner("Processing with the full updated logic..."):
         try:
@@ -691,42 +800,63 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                 st.success("Processing complete!")
 
                 # ====================== PRE-DOWNLOAD ANALYSIS ======================
-                st.subheader("📊 Pre-Download Analysis")
+                st.subheader("📊 Error Summary Snapshot")
 
                 from io import BytesIO
+                import pandas as pd
+
                 wb_preview = load_workbook(BytesIO(result_bytes))
 
-                # --- Summary Tab Preview ---
                 if "summary" in wb_preview.sheetnames:
                     ws_sum = wb_preview["summary"]
-                    st.markdown("**Summary Tab**")
+                    summary_rows = list(ws_sum.iter_rows(min_row=1, values_only=True))
 
-                    summary_data = []
-                    for row in ws_sum.iter_rows(min_row=1, max_row=ws_sum.max_row, values_only=True):
-                        summary_data.append([str(c) if c is not None else "" for c in row])
+                    if summary_rows and len(summary_rows) > 1:
+                        df_summary = pd.DataFrame(summary_rows[1:], columns=summary_rows[0])
+                        df_summary = df_summary.fillna(0)
 
-                    if summary_data:
-                        st.table(summary_data)
+                        # Identify building columns
+                        non_building = ["Category", "Total"]
+                        building_cols = [col for col in df_summary.columns if col not in non_building]
 
-                # --- Quick Metrics ---
-                st.markdown("**Tab Row Counts**")
+                        # === Key Stats ===
+                        total_issues = 0
+                        if "Total" in df_summary.columns:
+                            total_issues = int(df_summary["Total"].sum())
 
-                tab_counts = {}
-                for sheet_name in wb_preview.sheetnames:
-                    if sheet_name.lower() != "summary":
-                        tab_counts[sheet_name] = max(0, wb_preview[sheet_name].max_row - 1)
+                        st.markdown("### Key Error Metrics")
 
-                # Display in columns
-                cols = st.columns(len(tab_counts) if tab_counts else 1)
-                for i, (tab, count) in enumerate(tab_counts.items()):
-                    with cols[i]:
-                        st.metric(tab, count)
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Issues", total_issues)
+                        with col2:
+                            num_buildings = len(building_cols)
+                            st.metric("Buildings Affected", num_buildings)
 
-                # Simple bar chart of issues
-                if any(v > 0 for v in tab_counts.values()):
-                    import pandas as pd
-                    df_counts = pd.DataFrame(list(tab_counts.items()), columns=["Tab", "Rows"])
-                    st.bar_chart(df_counts.set_index("Tab"))
+                        # Breakdown by error type
+                        st.markdown("**Issues by Category**")
+                        category_totals = df_summary.set_index("Category")[building_cols].sum(axis=1)
+                        st.bar_chart(category_totals)
+
+                        # Per-building breakdown
+                        st.markdown("**Issues per Building**")
+                        building_totals = df_summary[building_cols].sum().sort_values(ascending=False)
+                        st.dataframe(building_totals.reset_index().rename(columns={"index": "Building", 0: "Issues"}), use_container_width=True, hide_index=True)
+
+                        # Top 5 worst buildings
+                        if len(building_totals) > 0:
+                            st.markdown("**Top Problematic Buildings**")
+                            for bldg, count in building_totals.head(5).items():
+                                if count > 0:
+                                    st.write(f"• **{bldg}**: {int(count)} issues")
+
+                        # Raw summary for reference (collapsible)
+                        with st.expander("View full Summary table"):
+                            st.dataframe(df_summary, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Summary sheet is empty.")
+                else:
+                    st.warning("No summary sheet was generated.")
 
                 # ====================== DOWNLOAD ======================
                 st.download_button(
@@ -736,6 +866,65 @@ if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file a
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
+
+                # === Extra visible test button for logging (with heavy diagnostics) ===
+                if st.button("🧪 Test: Force write one error row to local log"):
+                    try:
+                        import pandas as pd
+                        from datetime import datetime
+                        from pathlib import Path
+                        import os
+
+                        home = Path.home()
+                        desktop = home / "Desktop"
+                        script_dir = Path(__file__).parent.resolve()
+
+                        print("\n========== LOGGING DIAGNOSTICS ==========")
+                        print(f"Python __file__     : {__file__}")
+                        print(f"Resolved script dir : {script_dir}")
+                        print(f"Path.home()         : {home}")
+                        print(f"Desktop path        : {desktop}")
+                        print(f"Desktop exists?     : {desktop.exists()}")
+                        print(f"Current working dir : {os.getcwd()}")
+                        print("==========================================\n")
+
+                        # Try Desktop first
+                        log_path = desktop / "QFAB_Error_Log_TEST.xlsx"
+
+                        st.write("**Attempting to write to:**")
+                        st.code(str(log_path))
+
+                        test_row = pd.DataFrame([{
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "hall": "SYD20",
+                            "rack_type": "TEST",
+                            "building": "TEST-BLDG",
+                            "error_category": "TEST",
+                            "count": 99,
+                            "source_file": "manual_test"
+                        }])
+
+                        if log_path.exists():
+                            existing = pd.read_excel(log_path)
+                            combined = pd.concat([existing, test_row], ignore_index=True)
+                        else:
+                            combined = test_row
+
+                        combined.to_excel(log_path, index=False)
+
+                        if log_path.exists():
+                            st.success(f"✅ SUCCESS! File exists at: {log_path}")
+                            st.code(str(log_path), language="text")
+                            print(f"[TEST] SUCCESS - File exists at: {log_path}")
+                        else:
+                            st.error("File was supposedly written but does not exist on disk.")
+                            print("[TEST] ERROR - File does not exist after write attempt.")
+
+                    except Exception as e:
+                        st.error(f"Test log failed with exception: {e}")
+                        print(f"[TEST] EXCEPTION: {e}")
+                        import traceback
+                        traceback.print_exc()
         except Exception as e:
             st.error(f"Error during processing: {e}")
             st.exception(e)
