@@ -92,6 +92,41 @@ def get_latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
         .last()
     )
 
+
+def get_latest_with_deltas(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Return current + previous + delta for each (hall, building, error_category).
+    Used to show change since last update on the block cards.
+    """
+    if dataframe.empty:
+        return pd.DataFrame(columns=['hall', 'building', 'error_category', 'current', 'previous', 'delta'])
+
+    records = []
+    sorted_df = dataframe.sort_values('timestamp')
+
+    for (hall, bldg, cat), group in sorted_df.groupby(['hall', 'building', 'error_category']):
+        group = group.sort_values('timestamp')
+        current_row = group.iloc[-1]
+        current = int(current_row['count'])
+
+        if len(group) >= 2:
+            prev_row = group.iloc[-2]
+            previous = int(prev_row['count'])
+            delta = current - previous
+        else:
+            previous = None
+            delta = None
+
+        records.append({
+            'hall': hall,
+            'building': bldg,
+            'error_category': cat,
+            'current': current,
+            'previous': previous,
+            'delta': delta
+        })
+
+    return pd.DataFrame(records)
+
 # ====================== FILTERS ======================
 st.sidebar.header("Filters")
 
@@ -129,6 +164,7 @@ filtered = df[
 # Current snapshot only (latest entry per block + category).
 # This is what powers the main views so re-running the same blocks overwrites old numbers.
 current = get_latest_snapshot(filtered)
+current_with_deltas = get_latest_with_deltas(filtered)
 
 # ====================== EXECUTIVE KPI CARDS ======================
 st.markdown('<div class="section-header">Executive Snapshot</div>', unsafe_allow_html=True)
@@ -152,29 +188,54 @@ with col4:
 st.divider()
 
 # ====================== LOG FILE LOCATION (debug helper) ======================
-with st.expander("📍 Where is the dashboard data stored? (Click to expand)", expanded=False):
+with st.expander("📍 Where is the dashboard data stored? (Click to expand)", expanded=True):
+    st.markdown("### Current location (this session)")
     abs_path = DATA_FILE.resolve()
-    st.write("**Current log file path this Dashboard is using:**")
     st.code(str(abs_path))
 
     if DATA_FILE.exists():
-        st.success("✅ The log file exists at this location.")
+        st.success("✅ Log file exists here")
         file_size = DATA_FILE.stat().st_size
-        st.caption(f"File size: {file_size:,} bytes")
+        st.caption(f"Size: {file_size:,} bytes")
 
-        if st.button("📥 Download current validation_error_log.xlsx", key="download_log"):
-            with open(DATA_FILE, "rb") as f:
-                st.download_button(
-                    "Download validation_error_log.xlsx",
-                    data=f,
-                    file_name="validation_error_log.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        # Direct download button
+        with open(DATA_FILE, "rb") as f:
+            st.download_button(
+                "📥 Download validation_error_log.xlsx",
+                data=f,
+                file_name="validation_error_log.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
     else:
-        st.warning("The log file does **not** exist at this location yet.")
-        st.info("Run one of the tools (e.g. SYD20 QFAB V2) and process some files. The file will be created automatically on first successful log.")
+        st.warning("Log file does not exist in this environment yet.")
 
-    st.caption("Note: When viewing on Streamlit Cloud, this path points to the server, not your computer. Run the app locally from the repo folder to have the file on your own machine.")
+    st.divider()
+
+    st.markdown("### Local path on your computer (for editing/deleting)")
+    st.code(r"C:\Users\toddy\Documents\GitHub\JPB15-Validations\data\validation_error_log.xlsx")
+
+    st.markdown(r"""
+    **How to manually edit or delete data:**
+
+    1. Run the app **locally**:
+       ```powershell
+       cd "C:\Users\toddy\Documents\GitHub\JPB15-Validations"
+       streamlit run app.py
+       ```
+
+    2. Come back to this page and click the download button above.
+
+    3. Open the downloaded file in Excel and make your changes (add, edit, or delete rows).
+
+    4. Save the file and put it back into this folder on your PC:
+       `C:\Users\toddy\Documents\GitHub\JPB15-Validations\data\validation_error_log.xlsx`
+
+    5. Refresh the local Dashboard — your changes will appear.
+
+    > **Note:** This file is **not** on your computer when you're viewing the Cloud version.  
+    > It only lives locally when you run the app from your repo folder.
+    """)
 
 st.divider()
 
@@ -208,21 +269,36 @@ if not current.empty:
 
         for i, bldg in enumerate(row_buildings):
             with cols[i]:
-                bldg_df = current[current['building'] == bldg]
-                cat_counts = bldg_df.groupby('error_category')['count'].sum().to_dict()
+                # Get deltas for this block
+                bldg_deltas = current_with_deltas[current_with_deltas['building'] == bldg]
 
-                bldg_total = int(sum(cat_counts.values()))
+                # Build dicts for easy lookup
+                cat_current = {}
+                cat_delta = {}
+                for _, row in bldg_deltas.iterrows():
+                    cat = row['error_category']
+                    cat_current[cat] = row['current']
+                    cat_delta[cat] = row['delta']
+
+                bldg_total = sum(cat_current.values())
+                total_delta = sum(d for d in cat_delta.values() if d is not None)
 
                 # Card container (widget style)
                 with st.container(border=True):
-                    # Block header + total (compact)
+                    # Block header + total with delta
                     st.markdown(f"<div style='font-size:1.05rem; font-weight:600; margin-bottom:2px'>{bldg}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{bldg_total}</div>", unsafe_allow_html=True)
 
-                    # Mini horizontal stacked bar showing the split
+                    total_str = str(bldg_total)
+                    if total_delta is not None:
+                        delta_sign = f"({total_delta:+d})" if total_delta != 0 else ""
+                        delta_color = "green" if total_delta < 0 else "red"
+                        total_str += f" <span style='font-size:0.9rem; color:{delta_color};'>{delta_sign}</span>"
+                    st.markdown(f"<div style='font-size:1.9rem; font-weight:700; line-height:1.1; margin-bottom:6px'>{total_str}</div>", unsafe_allow_html=True)
+
+                    # Mini horizontal stacked bar (still uses current values)
                     bar_data = []
                     for cat in category_order:
-                        val = int(cat_counts.get(cat, 0))
+                        val = cat_current.get(cat, 0)
                         if val > 0:
                             bar_data.append({
                                 "Category": CAT_LABELS[cat],
@@ -253,18 +329,26 @@ if not current.empty:
                         st.plotly_chart(
                             fig, 
                             use_container_width=True, 
-                            key=f"bldg_bar_{bldg}",           # ← unique key fixes the DuplicateElementId error
+                            key=f"bldg_bar_{bldg}",
                             config={"displayModeBar": False}
                         )
 
-                    # Compact category list with small font
+                    # Compact category list with delta
                     st.markdown("<div style='margin-top:4px; font-size:0.82rem; line-height:1.25'>", unsafe_allow_html=True)
                     for cat in category_order:
                         label = CAT_LABELS[cat]
-                        val = int(cat_counts.get(cat, 0))
+                        val = cat_current.get(cat, 0)
+                        d = cat_delta.get(cat)
                         color = CAT_COLORS[cat]
+
+                        delta_html = ""
+                        if d is not None:
+                            delta_color = "green" if d < 0 else "red"
+                            delta_str = f"({d:+d})"
+                            delta_html = f" <span style='color:{delta_color}; font-size:0.75rem;'>{delta_str}</span>"
+
                         st.markdown(
-                            f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>",
+                            f"<span style='color:{color}; font-weight:600'>■</span> {label}: <b>{val}</b>{delta_html}",
                             unsafe_allow_html=True
                         )
                     st.markdown("</div>", unsafe_allow_html=True)
