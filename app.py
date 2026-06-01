@@ -14,7 +14,7 @@ if "authenticated" not in st.session_state:
 
 def login_form():
     st.title("🔐 Login")
-    st.markdown("Please log in to access the tools.")
+    st.markdown("username: admin password: admin.")
 
     with st.form("login_form"):
         username = st.text_input("Username")
