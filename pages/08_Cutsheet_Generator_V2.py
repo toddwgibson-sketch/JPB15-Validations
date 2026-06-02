@@ -406,7 +406,8 @@ def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
                 device_base = make_sort_key(n)
                 if '|' in device_base:
                     parts = device_base.split('|')
-                    # Strip trailing pure-digit segments (the port part) if present
+                    # Strip trailing pure-digit segments (the port part) if present.
+                    # Device subs like |C001 |W001 have letters so are not stripped (updated for no-port cases like COMPUTE1-WIC1).
                     while parts and parts[-1].isdigit():
                         parts.pop()
                     device_base = '|'.join(parts)
@@ -500,7 +501,8 @@ def add_sort_keys(df: pd.DataFrame) -> pd.DataFrame:
                 device_base = make_sort_key(n)
                 if '|' in device_base:
                     parts = device_base.split('|')
-                    # Strip trailing pure-digit segments (the port part) if present
+                    # Strip trailing pure-digit segments (the port part) if present.
+                    # Device subs like |C001 |W001 have letters so are not stripped (updated for no-port cases like COMPUTE1-WIC1).
                     while parts and parts[-1].isdigit():
                         parts.pop()
                     device_base = '|'.join(parts)
