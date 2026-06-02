@@ -624,20 +624,21 @@ def preprocess_and_filter_connections(df: pd.DataFrame, filters: dict = None) ->
 
 
 # ── Core logic from original script (kept intact) ─────────────────────────────
-COLOR_RJ45        = '#FFCCCC'  # bg for RJ45 tabs (pastel); actual tab color is red (see tab_hex in build)
-COLOR_RJ45_SERIAL = '#CCFFCC'  # bg for serial; tab color is green
-COLOR_DB9         = '#FFB347'
-COLOR_400G_AOC    = '#CCE5FF'
-COLOR_100G_AOC    = '#E0F0FF'
-COLOR_DAC         = '#D9D9D9'
-COLOR_OTHER       = '#FFFF00'
-
 DARK_BLUE = '#002060'
 YELLOW    = '#FFFF00'
 GREEN     = '#92D050'
 WHITE     = '#FFFFFF'
 BLACK     = '#000000'
 RED       = '#C00000'
+
+COLOR_RJ45        = RED   # red for Copper RJ45 tabs (bg + tab color)
+COLOR_RJ45_SERIAL = GREEN # green for Copper RJ45 serial tabs (bg + tab color)
+COLOR_DB9         = '#FFB347'
+COLOR_400G_AOC    = '#CCE5FF'
+COLOR_100G_AOC    = '#E0F0FF'
+COLOR_DAC         = '#D9D9D9'
+COLOR_OTHER       = '#FFFF00'
+
 ROW_H     = 15
 
 def assign_color(ct):
@@ -770,19 +771,6 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
 
     cable_hex = {ct: assign_color(ct) for ct in cable_types}
 
-    # Tab colors (sheet tabs in Excel) for copper RJ45 = red, serial = green (as requested)
-    # bg colors remain the soft pastels from COLOR_RJ45* for readability in cells.
-    # Other tabs use the same hex as their cell bg color.
-    tab_hex = {}
-    for ct in cable_types:
-        base = ct.replace(' (Internal)', '')
-        if 'Copper RJ45 cable - serial' in base:
-            tab_hex[ct] = GREEN
-        elif 'Copper RJ45 cable' in base:
-            tab_hex[ct] = RED
-        else:
-            tab_hex[ct] = cable_hex[ct]
-
     ALL_COLS = list(df.columns)
     CI = {n: ALL_COLS.index(n) for n in ALL_COLS}
     DA_RACK = CI['DeviceA Rack']; DA_RU = CI['DeviceA RU']
@@ -828,9 +816,11 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
     fmt_ct = {}
     for ct in cable_types:
         bg = cable_hex[ct]
+        # Use white text on red bg for readability (Copper RJ45 tabs now red)
+        text_color = WHITE if bg == RED else BLACK
         fmt_ct[ct] = {
-            'sep':  mk(bg, BLACK, bold=True, halign='center'),
-            'col':  mk(bg, BLACK, halign='left'),
+            'sep':  mk(bg, text_color, bold=True, halign='center'),
+            'col':  mk(bg, text_color, halign='left'),
             'tab':  mk(None, BLACK, halign='center'),
             'num':  mk(None, BLACK, halign='center'),
             'note': mk(None, BLACK, halign='center'),
@@ -1049,7 +1039,7 @@ def build_workbook_to_bytes(df, title_label="", skip_heavy_progress=False):
         sname = ct_tab_names.get(ct, make_tab_name(ct, used))
         used.add(sname)
         ws = wb.add_worksheet(sname)
-        ws.set_tab_color(tab_hex[ct])
+        ws.set_tab_color(cable_hex[ct])
         ws.set_default_row(14.9)
         ws.freeze_panes(1, 0)
         last = 1 + len(grp)
