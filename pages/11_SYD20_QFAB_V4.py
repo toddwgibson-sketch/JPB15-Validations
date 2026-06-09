@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """
-SYD20 QFAB / Slack Report Formatter — Streamlit V3
-Full conversion of the updated Tkinter script (SY20_QFAB_SLACK_No_PP.py)
-V3 changes:
-- Improved sort_mismatch_pairs: reliable pair clustering using frozenset
-- Every true mismatch swap now stays together with consistent orange/yellow color
-- Deterministic ordering, unpaired rows at the bottom
-- All original features and quality preserved
-Run:
-    streamlit run SY20_QFAB_SLACK_streamlit_V3.py
+SYD20 QFAB / Slack Report Formatter — Streamlit V4
+Full conversion of SY20_QFAB_SLACK_No_PP.py
+- swap_mismatch_groups and sort_mismatch_pairs are verbatim from the original
+- Column ordering (Expected before Active in Mismatch tabs) and cluster coloring
+  exactly match the original's "suggested mismatch" presentation
+- All other original features and quality preserved
 """
 import streamlit as st
 import pandas as pd
@@ -132,54 +129,72 @@ def merge_columns(headers, rows):
         headers, rows = new_headers, new_rows
     return headers, rows
 
-# ================== V3 IMPROVED MISMATCH CLUSTERING ==================
+# ================== MISMATCH CLUSTERING (verbatim from original SY20_QFAB_SLACK_No_PP.py) ==================
 def sort_mismatch_pairs(headers, rows):
-    """V3: Reliable mismatch pair clustering.
-    Groups rows by frozenset{Expected, Active} so every swap pair stays together.
-    Alternates orange/yellow per unique pair. Unpaired rows at bottom.
+    """Group rows that are connected via Expected<->Active swaps into clusters.
+    Cluster 1 → orange, Cluster 2 → yellow, Cluster 3 → orange, ... (alternating).
+    Unpaired rows (no match) are moved to the end with no highlight.
+    Returns (new_rows, row_colors) where row_colors is a dict {0-based index: fill}.
     """
-    if not rows:
-        return rows, {}
+    from collections import defaultdict
 
     exp_i = headers.index("Expected Hostname Exp. Interface")
     act_i = headers.index("Active Host Act. Interface")
 
-    from collections import defaultdict
-    groups = defaultdict(list)
-    unpaired = []
+    # Build adjacency: row i <-> row j if rows[i][exp] == rows[j][act] or vice versa
+    act_to_idxs = defaultdict(list)
+    for i, r in enumerate(rows):
+        v = r[act_i]
+        if v:
+            act_to_idxs[v].append(i)
 
-    for row in rows:
-        exp_val = str(row[exp_i] or "").strip()
-        act_val = str(row[act_i] or "").strip()
-        if exp_val and act_val and exp_val != act_val:
-            key = frozenset([exp_val, act_val])
-            groups[key].append(row)
-        else:
-            unpaired.append(row)
+    adj = defaultdict(set)
+    for i, r in enumerate(rows):
+        exp_val = r[exp_i]
+        if exp_val and exp_val in act_to_idxs:
+            for j in act_to_idxs[exp_val]:
+                if j != i:
+                    adj[i].add(j)
+                    adj[j].add(i)
 
-    # Preserve original appearance order of pairs
-    ordered_groups = []
-    seen = set()
-    for row in rows:
-        exp_val = str(row[exp_i] or "").strip()
-        act_val = str(row[act_i] or "").strip()
-        if exp_val and act_val and exp_val != act_val:
-            key = frozenset([exp_val, act_val])
-            if key not in seen:
-                seen.add(key)
-                ordered_groups.append(groups[key])
+    # Find connected components
+    visited = set()
+    groups = []
+    for start in range(len(rows)):
+        if start in visited or start not in adj:
+            continue
+        group = []
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            if n in visited:
+                continue
+            visited.add(n)
+            group.append(n)
+            stack.extend(adj[n] - visited)
+        groups.append(sorted(group))
 
-    row_colors = {}
-    current_color = ORANGE_FILL
+    # Unpaired rows (not in any group)
+    grouped_idxs = {i for g in groups for i in g}
+    unpaired = [i for i in range(len(rows)) if i not in grouped_idxs]
+
+    # Assign alternating colors: group 1=orange, group 2=yellow, group 3=orange ...
+    group_color = []
+    for gi, group in enumerate(groups):
+        group_color.append(ORANGE_FILL if gi % 2 == 0 else YELLOW_FILL)
+
+    # Build new row order: all grouped rows first (in group order), then unpaired
     new_rows = []
+    row_colors = {}
+    for gi, group in enumerate(groups):
+        fill = group_color[gi]
+        for orig_idx in group:
+            row_colors[len(new_rows)] = fill
+            new_rows.append(rows[orig_idx])
 
-    for group in ordered_groups:
-        for r in group:
-            row_colors[len(new_rows)] = current_color
-            new_rows.append(r)
-        current_color = YELLOW_FILL if current_color == ORANGE_FILL else ORANGE_FILL
+    for orig_idx in unpaired:
+        new_rows.append(rows[orig_idx])
 
-    new_rows.extend(unpaired)
     return new_rows, row_colors
 
 # ================== Remaining original functions (unchanged) ==================
@@ -194,8 +209,12 @@ def reorder_columns(headers, rows, new_order_names):
     return [headers[i] for i in final], [[r[i] for i in final] for r in rows]
 
 def swap_mismatch_groups(headers, rows):
-    ACT = ["Active Host Act. Interface", "Act. Rack", "Act. Elevation"]
-    EXP = ["Expected Hostname Exp. Interface", "Exp. Rack", "Exp. Elevation"]
+    """Put Expected group before Active group in Mismatch tabs.
+    Must be called BEFORE merge_columns (uses the pre-merged column names).
+    Matches the original SY20_QFAB_SLACK_No_PP.py logic.
+    """
+    ACT = ["Active Host", "Act. Interface", "Act. Rack", "Act. Elevation"]
+    EXP = ["Expected Hostname", "Exp. Interface", "Exp. Rack", "Exp. Elevation"]
     if not all(h in headers for h in ACT + EXP):
         return headers, rows
     act_idxs = [headers.index(h) for h in ACT]
@@ -495,7 +514,7 @@ def process_files(cutsheet_bytes, input_files):
     fb_hdr, fb_rows = merge_columns(fb_hdr, fb_rows)
     op_t2_rows, op_t1_rows = split_by_cutsheet_pp(op_hdr, op_rows)
     fb_t2_rows, fb_t1_rows = split_by_cutsheet_pp(fb_hdr, fb_rows)
-    # === V3 clustering ===
+    # === Clustering (exact original logic) ===
     t2_mis_rows, t2_mis_colors = sort_mismatch_pairs(t2_mis_hdr, t2_mis_rows)
     t1_mis_rows, t1_mis_colors = sort_mismatch_pairs(t1_mis_hdr, t1_mis_rows)
     sheets_to_write = [
@@ -541,18 +560,18 @@ def process_files(cutsheet_bytes, input_files):
     return output.getvalue(), "-".join(labels) + "_QFAB_Updated.xlsx"
 
 # ================== Streamlit UI ==================
-st.set_page_config(page_title="SYD20 QFAB (V3)", page_icon="📊", layout="wide")
-st.title("SYD20 QFAB / Slack Formatter — V3")
-st.caption("Converted from the latest Tkinter script + V3 improved mismatch clustering")
+st.set_page_config(page_title="SYD20 QFAB (V4)", page_icon="📊", layout="wide")
+st.title("SYD20 QFAB / Slack Formatter — V4")
+st.caption("Converted from the latest Tkinter script with exact original mismatch logic (V4)")
 
 st.markdown("### 1. Cutsheet")
-cutsheet_file = st.file_uploader("Select the CUTSHEET xlsx", type=["xlsx", "xlsm"], key="cutsheet_v3")
+cutsheet_file = st.file_uploader("Select the CUTSHEET xlsx", type=["xlsx", "xlsm"], key="cutsheet_v4")
 
 st.markdown("### 2. Input Files (one or more per-building files)")
-input_files = st.file_uploader("Select input audit files", type=["xlsx", "xlsm"], accept_multiple_files=True, key="inputs_v3")
+input_files = st.file_uploader("Select input audit files", type=["xlsx", "xlsm"], accept_multiple_files=True, key="inputs_v4")
 
-if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files), key="process_v3"):
-    with st.spinner("Processing with V3 logic..."):
+if st.button("🚀 Process Files", type="primary", disabled=not (cutsheet_file and input_files), key="process_v4"):
+    with st.spinner("Processing with V4 (exact original mismatch logic)..."):
         try:
             result_bytes, filename = process_files(cutsheet_file.getvalue(), input_files)
             if result_bytes:

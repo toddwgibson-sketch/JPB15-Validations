@@ -44,3 +44,4 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+pages/08_Cutsheet_Generator_V2.py
