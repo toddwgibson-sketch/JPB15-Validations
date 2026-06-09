@@ -562,7 +562,7 @@ def process_files(cutsheet_bytes, input_files):
 # ================== Streamlit UI ==================
 st.set_page_config(page_title="SYD20 QFAB (V4)", page_icon="📊", layout="wide")
 st.title("SYD20 QFAB / Slack Formatter — V4")
-st.caption("Converted from the latest Tkinter script with exact original mismatch logic (V4)")
+st.caption("Improved mismatch logic (V4)")
 
 st.markdown("### 1. Cutsheet")
 cutsheet_file = st.file_uploader("Select the CUTSHEET xlsx", type=["xlsx", "xlsm"], key="cutsheet_v4")
