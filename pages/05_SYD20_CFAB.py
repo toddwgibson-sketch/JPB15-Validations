@@ -30,10 +30,24 @@ LIGHT_GREY = "A6A6A6"
 # ---------------------------------------------------------------------------
 # Cutsheet lookup (unchanged from original)
 # ---------------------------------------------------------------------------
-def build_cutsheet_lookup(path: str):
+def build_cutsheet_lookup(path: Path) -> tuple[dict, dict]:
+    """
+    Load the CFAB cutsheet and build a lookup keyed by 'device port'.
+
+    Row formats (all long-path rows have col4 populated):
+      3-PP long: col0=A dev+port, col1=A rack, col2=PP1, col3=PP2, col4=PP3,
+                 col5=B dev+port, col6=B rack, col7=NaN
+      4-PP long: col0=A dev+port, col1=A rack, col2=PP1, col3=PP2, col4=PP3,
+                 col5=PP4,        col6=B dev+port, col7=B rack
+      Short:     col0=A dev+port, col1=A rack, col2=B dev+port, col3=B rack,
+                 col4..col7=NaN
+
+    We register BOTH endpoints so a match works from either side.
+    Also returns a device_rack_lookup: device_name -> rack for fallback use.
+    """
     df = pd.read_excel(path, sheet_name=0, header=None)
-    lookup = {}
-    device_rack_lookup = {}
+    lookup: dict = {}
+    device_rack_lookup: dict = {}
 
     def add(key, device_rack, pp_list, peer_device, peer_rack):
         if not key or key in lookup:
@@ -47,6 +61,7 @@ def build_cutsheet_lookup(path: str):
             "peer_device": peer_device,
             "peer_rack": peer_rack,
         }
+        # Register device name -> rack for fallback
         dev_name = key.split(" ", 1)[0] if key else None
         if dev_name and dev_name not in device_rack_lookup and pd.notna(device_rack):
             device_rack_lookup[dev_name] = device_rack
@@ -54,20 +69,23 @@ def build_cutsheet_lookup(path: str):
     for _, row in df.iterrows():
         is_long = pd.notna(row[4])
         if is_long:
+            # Detect 3-PP vs 4-PP: if col5 starts with "PP" it is the 4th patch panel
             has_4pp = pd.notna(row[5]) and isinstance(row[5], str) and row[5].strip().startswith("PP")
             if has_4pp:
-                a_key = str(row[0]) if pd.notna(row[0]) else None
-                b_key = str(row[6]) if pd.notna(row[6]) else None
+                # 4-PP path: col2-col5 are PPs, col6=B dev+port, col7=B rack
+                a_key  = str(row[0]) if pd.notna(row[0]) else None
+                b_key  = str(row[6]) if pd.notna(row[6]) else None
                 add(a_key, row[1], [row[2], row[3], row[4], row[5]], row[6], row[7])
                 add(b_key, row[7], [row[5], row[4], row[3], row[2]], row[0], row[1])
             else:
-                a_key = str(row[0]) if pd.notna(row[0]) else None
-                b_key = str(row[5]) if pd.notna(row[5]) else None
+                # 3-PP path: col2-col4 are PPs, col5=B dev+port, col6=B rack
+                a_key  = str(row[0]) if pd.notna(row[0]) else None
+                b_key  = str(row[5]) if pd.notna(row[5]) else None
                 add(a_key, row[1], [row[2], row[3], row[4]], row[5], row[6])
                 add(b_key, row[6], [row[4], row[3], row[2]], row[0], row[1])
         else:
-            a_key = str(row[0]) if pd.notna(row[0]) else None
-            b_key = str(row[2]) if pd.notna(row[2]) else None
+            a_key  = str(row[0]) if pd.notna(row[0]) else None
+            b_key  = str(row[2]) if pd.notna(row[2]) else None
             add(a_key, row[1], [], row[2], row[3])
             add(b_key, row[3], [], row[0], row[1])
 
@@ -161,6 +179,7 @@ def split_lldp_sheet(wb):
     del wb[src_name]
 
 def clean_columns(wb):
+    # Downlink: keep only Device A Name + Device A Port
     if "Downlink" in wb.sheetnames:
         delete_columns_by_name(wb["Downlink"], [
             "Device A Rack", "Expected Device B Rack", "Expected Device B Name",
@@ -168,6 +187,7 @@ def clean_columns(wb):
             "Device B Port", "LLDP Status", "Patch Panel Matrix",
         ])
 
+    # Mismatch: keep Device A Name/Port + Device B Name/Port
     if "Mismatch" in wb.sheetnames:
         delete_columns_by_name(wb["Mismatch"], [
             "Device A Rack", "Expected Device B Rack", "Expected Device B Name",
@@ -175,15 +195,19 @@ def clean_columns(wb):
             "LLDP Status", "Patch Panel Matrix",
         ])
 
+    # Optic Errors: drop, then move Rx Power to first column
     if "Optic Errors" in wb.sheetnames:
         ws = wb["Optic Errors"]
         delete_columns_by_name(ws, [
             "Remote Device Name", "Remote Device Port", "Patch Panel Matrix",
         ])
+
+        # Move Rx Power to the first column on Optic Errors
         hdrs = [c.value for c in ws[1]]
         if "Rx Power" in hdrs and hdrs.index("Rx Power") != 0:
             rx_idx = hdrs.index("Rx Power")
             new_order = [rx_idx] + [i for i in range(len(hdrs)) if i != rx_idx]
+
             data = [[c.value for c in row] for row in ws.iter_rows()]
             styles = [[{
                 "font": copy(c.font), "fill": copy(c.fill),
@@ -192,6 +216,7 @@ def clean_columns(wb):
             } for c in row] for row in ws.iter_rows()]
             old_widths = [ws.column_dimensions[get_column_letter(i + 1)].width
                           for i in range(len(hdrs))]
+
             ws.delete_rows(1, ws.max_row)
             for r_i, (row_vals, row_styles) in enumerate(zip(data, styles), start=1):
                 for new_c, old_c in enumerate(new_order, start=1):
@@ -269,6 +294,14 @@ SPLIT_KEY_HEADERS = {
 }
 
 def split_long_short(wb, lookup):
+    """
+    Route each row to its long-path (T3-T2) or short-path (T2-T1-T0) tab.
+
+    Classification asks the cutsheet directly: a cable is long-path iff its
+    lookup entry has a non-empty pp1. We never inspect the hop strings —
+    that decouples the split from how patch panels are named (PP:, PP., pp-,
+    whatever the next cutsheet convention happens to be).
+    """
     for src_name in ["Downlink", "Mismatch", "Optic Errors", "Interface Down Errors"]:
         if src_name not in wb.sheetnames:
             continue
@@ -292,6 +325,8 @@ def split_long_short(wb, lookup):
             port = row_vals[port_col - 1]
             key = f"{name} {port}" if name and port else None
             info = lookup.get(key) if key else None
+            # Long-path iff the cutsheet says so. Unmatched rows fall through
+            # to short — same as the prior behaviour.
             if info and info.get("pp1") is not None:
                 long_rows.append(row_vals)
             else:
@@ -328,11 +363,13 @@ def trim_short_tabs(wb):
 def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
     for sn, b_headers, expect_long in [
         ("T3-T2 Mismatch",
-         ["Act. Rack U", "Cut. PP 1", "Cut. PP 2", "Cut. PP 3", "Cut. PP 4",
+         ["Act. Rack U",
+          "Cut. PP 1", "Cut. PP 2", "Cut. PP 3", "Cut. PP 4",
           "Cut. Other End", "Cut. Other End Port", "Cut. Other End Rack"],
          True),
         ("T2-T1-T0 Mismatch",
-         ["Act. Rack U", "Cut. Other End", "Cut. Other End Port", "Cut. Other End Rack"],
+         ["Act. Rack U",
+          "Cut. Other End", "Cut. Other End Port", "Cut. Other End Rack"],
          False),
     ]:
         if sn not in wb.sheetnames:
@@ -341,6 +378,7 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
         header_ref = ws.cell(row=1, column=1)
         data_ref = ws.cell(row=2, column=1) if ws.max_row >= 2 else header_ref
 
+        # Rename A-side columns: rack/PPs get "A " prefix; peer becomes "Exp."
         rename_map = {
             "Device Rack U": "A Rack U",
             "PP 1": "A PP 1", "PP 2": "A PP 2",
@@ -353,6 +391,7 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
             if c.value in rename_map:
                 c.value = rename_map[c.value]
 
+        # Append B-side header columns (Act./Cut. names)
         start_col = ws.max_column + 1
         for i, h in enumerate(b_headers):
             c = ws.cell(row=1, column=start_col + i, value=h)
@@ -361,6 +400,7 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
         hdrs = [c.value for c in ws[1]]
         bname_col = hdrs.index("Device B Name") + 1
         bport_col = hdrs.index("Device B Port") + 1
+        slots = len(b_headers)
 
         for r in range(2, ws.max_row + 1):
             name = ws.cell(row=r, column=bname_col).value
@@ -371,11 +411,15 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
             if info:
                 peer_name, peer_port = split_device_port(info["peer_device"])
                 if expect_long:
-                    vals = [info["device_rack"], info["pp1"], info["pp2"], info["pp3"], info["pp4"],
-                            peer_name, peer_port, info["peer_rack"]]
+                    vals = [
+                        info["device_rack"],
+                        info["pp1"], info["pp2"], info["pp3"], info["pp4"],
+                        peer_name, peer_port, info["peer_rack"],
+                    ]
                 else:
                     vals = [info["device_rack"], peer_name, peer_port, info["peer_rack"]]
             else:
+                # Fallback: at least try to populate rack from device name
                 fallback_rack = device_rack_lookup.get(str(name).strip()) if name else None
                 if expect_long:
                     vals = [fallback_rack, None, None, None, None, None, None, None]
@@ -387,6 +431,8 @@ def enrich_mismatch_b_side(wb, lookup, device_rack_lookup):
                 c.value = v
                 style_cell(c, data_ref)
 
+        # Rename "Device B Name/Port" → "Act. Device/Port" then pink the whole
+        # active + cutsheet block
         hdrs = [c.value for c in ws[1]]
         start_pink = hdrs.index("Device B Name") + 1
         rename_b = {"Device B Name": "Act. Device", "Device B Port": "Act. Port"}
