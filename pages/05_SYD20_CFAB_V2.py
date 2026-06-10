@@ -14,12 +14,12 @@ import tempfile
 import os
 from collections import defaultdict
 
-st.set_page_config(page_title="Rack Validation Formatter", page_icon="🗄️", layout="wide")
-st.title("SYD20 CFAB")
-st.caption("")
+st.set_page_config(page_title="SYD20 CFAB V2 - Rack Validation Formatter", page_icon="🗄️", layout="wide")
+st.title("SYD20 CFAB V2")
+st.caption("Streamlit port (logic matched to reference)")
 
 # ---------------------------------------------------------------------------
-# Style constants (from original)
+# Style constants (V2 - matched to reference CFAB_CODE_Portal.py)
 # ---------------------------------------------------------------------------
 YELLOW = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 PINK   = PatternFill(start_color="FFC0CB", end_color="FFC0CB", fill_type="solid")
@@ -28,7 +28,7 @@ BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 LIGHT_GREY = "A6A6A6"
 
 # ---------------------------------------------------------------------------
-# Cutsheet lookup (unchanged from original)
+# Cutsheet lookup (V2 - exact match to reference CFAB_CODE_Portal.py)
 # ---------------------------------------------------------------------------
 def build_cutsheet_lookup(path: Path) -> tuple[dict, dict]:
     """
@@ -134,7 +134,7 @@ def autofit_columns(ws, min_w=12, max_w=40):
         ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, min_w), max_w)
 
 # ---------------------------------------------------------------------------
-# All processing steps (kept from original)
+# All processing steps (V2 - logic aligned to reference)
 # ---------------------------------------------------------------------------
 def split_lldp_sheet(wb):
     src_name = "LLDP Mismatch + Link Down"
